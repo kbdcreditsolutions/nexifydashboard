@@ -1,0 +1,577 @@
+// Nexify Operations & Finance Dashboard — data model
+// Dev datasource: SQLite (file:./dev.db). Swap provider to "postgresql" and
+// set DATABASE_URL to a Postgres connection string for production deploys —
+// no model changes required; all types used here are provider-portable.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums (SQLite has no native enum type; Prisma emulates them as String)
+// ---------------------------------------------------------------------------
+
+enum Role {
+  OWNER
+  FINANCE
+  OPERATIONS
+  MANAGER
+  EMPLOYEE
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACTOR
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  INACTIVE
+  TERMINATED
+}
+
+enum ClientStatus {
+  ACTIVE
+  INACTIVE
+  PROSPECT
+  CHURNED
+}
+
+enum ProjectStatus {
+  PLANNING
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+enum BillingModel {
+  HOURLY
+  FIXED
+  RETAINER
+  MILESTONE
+}
+
+enum RevenueType {
+  HOURLY
+  FIXED_PROJECT
+  RETAINER
+  MILESTONE
+  RECURRING
+  ONE_TIME_CONSULTING
+  OTHER
+}
+
+enum PaymentStatus {
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+}
+
+enum TimesheetStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum ExpenseApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum PaidBy {
+  COMPANY
+  EMPLOYEE
+}
+
+enum RecurrenceFrequency {
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  ANNUALLY
+}
+
+enum PayableStatus {
+  OPEN
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+}
+
+enum CashDirection {
+  INFLOW
+  OUTFLOW
+}
+
+enum CashCertainty {
+  ACTUAL
+  PROJECTED
+}
+
+enum AlertType {
+  INVOICE_OVERDUE
+  LARGE_RECEIVABLE
+  PROJECT_OVER_BUDGET
+  PROJECT_MARGIN_LOW
+  UTILIZATION_LOW
+  EXPENSE_SPIKE
+  RECURRING_EXPENSE_UPCOMING
+  PAYABLE_UPCOMING
+  CASH_BELOW_THRESHOLD
+  CONTRACT_EXPIRING
+}
+
+enum AlertSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  APPROVE
+  REJECT
+  SOFT_DELETE
+}
+
+// ---------------------------------------------------------------------------
+// Identity & access
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  passwordHash String
+  role         Role      @default(EMPLOYEE)
+  isActive     Boolean   @default(true)
+  employee     Employee?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  approvedTimesheets    Timesheet[] @relation("TimesheetApprover")
+  approvedExpenses      Expense[]   @relation("ExpenseApprover")
+  auditLogs             AuditLog[]
+  accountManagerClients Client[]    @relation("AccountManager")
+  managedProjects       Project[]   @relation("ProjectManager")
+}
+
+// ---------------------------------------------------------------------------
+// Core masters
+// ---------------------------------------------------------------------------
+
+model Employee {
+  id                  String         @id @default(cuid())
+  employeeCode        String         @unique
+  userId              String?        @unique
+  user                User?          @relation(fields: [userId], references: [id])
+  name                String
+  email               String         @unique
+  role                String
+  department          String
+  employmentType      EmploymentType @default(FULL_TIME)
+  joiningDate         DateTime
+  endDate             DateTime?
+  status              EmployeeStatus @default(ACTIVE)
+  monthlyCost         Decimal        @default(0)
+  hourlyCost          Decimal        @default(0)
+  standardWeeklyHours Decimal        @default(40)
+  billingRate         Decimal        @default(0)
+  notes               String?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  deletedAt           DateTime?
+
+  timesheets         Timesheet[]
+  revenues           Revenue[]
+  expenses           Expense[]           @relation("EmployeePaidExpenses")
+  projectAssignments ProjectAssignment[]
+  clientAssignments  ClientAssignment[]
+}
+
+model Client {
+  id                String       @id @default(cuid())
+  clientCode        String       @unique
+  name              String
+  contactPerson     String?
+  email             String?
+  phone             String?
+  contractStartDate DateTime?
+  contractEndDate   DateTime?
+  paymentTerms      String       @default("Net 30")
+  billingTerms      String?
+  accountManagerId  String?
+  accountManager    User?        @relation("AccountManager", fields: [accountManagerId], references: [id])
+  status            ClientStatus @default(ACTIVE)
+  notes             String?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  deletedAt         DateTime?
+
+  projects    Project[]
+  revenues    Revenue[]
+  invoices    Invoice[]
+  timesheets  Timesheet[]
+  expenses    Expense[]
+  assignments ClientAssignment[]
+}
+
+model ClientAssignment {
+  id         String   @id @default(cuid())
+  clientId   String
+  client     Client   @relation(fields: [clientId], references: [id])
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id])
+  createdAt  DateTime @default(now())
+
+  @@unique([clientId, employeeId])
+}
+
+model Service {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+
+  revenues   Revenue[]
+  timesheets Timesheet[]
+  projects   Project[]
+}
+
+model Project {
+  id                 String        @id @default(cuid())
+  projectCode        String        @unique
+  name               String
+  clientId           String
+  client             Client        @relation(fields: [clientId], references: [id])
+  projectManagerId   String?
+  projectManager     User?         @relation("ProjectManager", fields: [projectManagerId], references: [id])
+  serviceId          String?
+  service            Service?      @relation(fields: [serviceId], references: [id])
+  startDate          DateTime
+  endDate            DateTime?
+  billingModel       BillingModel  @default(HOURLY)
+  contractValue      Decimal       @default(0)
+  budget             Decimal       @default(0)
+  estimatedHours     Decimal       @default(0)
+  marginThresholdPct Decimal       @default(20)
+  status             ProjectStatus @default(PLANNING)
+  notes              String?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  deletedAt          DateTime?
+
+  assignments ProjectAssignment[]
+  timesheets  Timesheet[]
+  revenues    Revenue[]
+  invoices    Invoice[]
+  expenses    Expense[]
+}
+
+model ProjectAssignment {
+  id                  String   @id @default(cuid())
+  projectId           String
+  project             Project  @relation(fields: [projectId], references: [id])
+  employeeId          String
+  employee            Employee @relation(fields: [employeeId], references: [id])
+  billingRateOverride Decimal?
+  createdAt           DateTime @default(now())
+
+  @@unique([projectId, employeeId])
+}
+
+// ---------------------------------------------------------------------------
+// Timesheets -> Revenue
+// ---------------------------------------------------------------------------
+
+model Timesheet {
+  id           String          @id @default(cuid())
+  date         DateTime
+  employeeId   String
+  employee     Employee        @relation(fields: [employeeId], references: [id])
+  clientId     String?
+  client       Client?         @relation(fields: [clientId], references: [id])
+  projectId    String?
+  project      Project?        @relation(fields: [projectId], references: [id])
+  serviceId    String?
+  service      Service?        @relation(fields: [serviceId], references: [id])
+  hours        Decimal
+  billable     Boolean         @default(true)
+  description  String?
+  status       TimesheetStatus @default(SUBMITTED)
+  approvedById String?
+  approvedBy   User?           @relation("TimesheetApprover", fields: [approvedById], references: [id])
+  approvedAt   DateTime?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  revenue Revenue?
+
+  @@index([employeeId, date])
+  @@index([projectId])
+}
+
+model Revenue {
+  id            String        @id @default(cuid())
+  revenueCode   String        @unique
+  clientId      String
+  client        Client        @relation(fields: [clientId], references: [id])
+  projectId     String?
+  project       Project?      @relation(fields: [projectId], references: [id])
+  employeeId    String?
+  employee      Employee?     @relation(fields: [employeeId], references: [id])
+  serviceId     String?
+  service       Service?      @relation(fields: [serviceId], references: [id])
+  timesheetId   String?       @unique
+  timesheet     Timesheet?    @relation(fields: [timesheetId], references: [id])
+  revenueType   RevenueType
+  date          DateTime
+  amount        Decimal
+  invoiceId     String?
+  invoice       Invoice?      @relation(fields: [invoiceId], references: [id])
+  paymentStatus PaymentStatus @default(UNPAID)
+  notes         String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([clientId, date])
+  @@index([projectId])
+}
+
+// ---------------------------------------------------------------------------
+// Invoicing / AR / Payments
+// ---------------------------------------------------------------------------
+
+model Invoice {
+  id            String        @id @default(cuid())
+  invoiceNumber String        @unique
+  clientId      String
+  client        Client        @relation(fields: [clientId], references: [id])
+  projectId     String?
+  project       Project?      @relation(fields: [projectId], references: [id])
+  invoiceDate   DateTime
+  dueDate       DateTime
+  subtotal      Decimal
+  taxRate       Decimal       @default(0)
+  taxAmount     Decimal       @default(0)
+  total         Decimal
+  status        InvoiceStatus @default(DRAFT)
+  notes         String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  items      InvoiceItem[]
+  revenues   Revenue[]
+  payments   Payment[]
+  receivable AccountsReceivable?
+}
+
+model InvoiceItem {
+  id          String  @id @default(cuid())
+  invoiceId   String
+  invoice     Invoice @relation(fields: [invoiceId], references: [id])
+  description String
+  quantity    Decimal @default(1)
+  unitPrice   Decimal
+  amount      Decimal
+}
+
+model Payment {
+  id        String   @id @default(cuid())
+  invoiceId String
+  invoice   Invoice  @relation(fields: [invoiceId], references: [id])
+  date      DateTime
+  amount    Decimal
+  method    String?
+  reference String?
+  notes     String?
+  createdAt DateTime @default(now())
+}
+
+model AccountsReceivable {
+  id          String   @id @default(cuid())
+  invoiceId   String   @unique
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id])
+  outstanding Decimal
+  dueDate     DateTime
+  updatedAt   DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Expenses / AP
+// ---------------------------------------------------------------------------
+
+model ExpenseCategory {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  group     String
+  isCustom  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  expenses          Expense[]
+  recurringExpenses RecurringExpense[]
+}
+
+model Vendor {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  contact   String?
+  email     String?
+  createdAt DateTime @default(now())
+
+  expenses          Expense[]
+  recurringExpenses RecurringExpense[]
+  payables          AccountsPayable[]
+}
+
+model Expense {
+  id                 String                @id @default(cuid())
+  expenseCode        String                @unique
+  date               DateTime
+  categoryId         String
+  category           ExpenseCategory       @relation(fields: [categoryId], references: [id])
+  subcategory        String?
+  vendorId           String?
+  vendor             Vendor?               @relation(fields: [vendorId], references: [id])
+  amount             Decimal
+  paymentMethod      String?
+  paidBy             PaidBy                @default(COMPANY)
+  employeeId         String?
+  employee           Employee?             @relation("EmployeePaidExpenses", fields: [employeeId], references: [id])
+  clientId           String?
+  client             Client?               @relation(fields: [clientId], references: [id])
+  projectId          String?
+  project            Project?              @relation(fields: [projectId], references: [id])
+  recurring          Boolean               @default(false)
+  recurringExpenseId String?
+  recurringExpense   RecurringExpense?     @relation(fields: [recurringExpenseId], references: [id])
+  receiptUrl         String?
+  notes              String?
+  approvalStatus     ExpenseApprovalStatus @default(PENDING)
+  approvedById       String?
+  approvedBy         User?                 @relation("ExpenseApprover", fields: [approvedById], references: [id])
+  approvedAt         DateTime?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+  deletedAt          DateTime?
+
+  payable AccountsPayable?
+
+  @@index([date])
+  @@index([clientId])
+  @@index([projectId])
+}
+
+model RecurringExpense {
+  id             String              @id @default(cuid())
+  name           String
+  vendorId       String?
+  vendor         Vendor?             @relation(fields: [vendorId], references: [id])
+  categoryId     String
+  category       ExpenseCategory     @relation(fields: [categoryId], references: [id])
+  amount         Decimal
+  frequency      RecurrenceFrequency
+  startDate      DateTime
+  endDate        DateTime?
+  nextOccurrence DateTime
+  active         Boolean             @default(true)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  generatedExpenses Expense[]
+}
+
+model AccountsPayable {
+  id         String        @id @default(cuid())
+  vendorId   String
+  vendor     Vendor        @relation(fields: [vendorId], references: [id])
+  expenseId  String?       @unique
+  expense    Expense?      @relation(fields: [expenseId], references: [id])
+  invoiceRef String?
+  amount     Decimal
+  dueDate    DateTime
+  paidAmount Decimal       @default(0)
+  balance    Decimal
+  status     PayableStatus @default(OPEN)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Cash flow
+// ---------------------------------------------------------------------------
+
+model CashTransaction {
+  id         String        @id @default(cuid())
+  date       DateTime
+  direction  CashDirection
+  category   String
+  amount     Decimal
+  certainty  CashCertainty @default(ACTUAL)
+  sourceType String?
+  sourceId   String?
+  notes      String?
+  createdAt  DateTime      @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Periods / settings / alerts / audit
+// ---------------------------------------------------------------------------
+
+model FinancialPeriod {
+  id        String   @id @default(cuid())
+  label     String   @unique
+  startDate DateTime
+  endDate   DateTime
+  isClosed  Boolean  @default(false)
+}
+
+model Settings {
+  id    String @id @default("singleton")
+  key   String @unique
+  value String
+}
+
+model Alert {
+  id         String        @id @default(cuid())
+  type       AlertType
+  severity   AlertSeverity @default(WARNING)
+  entityType String
+  entityId   String
+  message    String
+  isResolved Boolean       @default(false)
+  resolvedAt DateTime?
+  createdAt  DateTime      @default(now())
+}
+
+model AuditLog {
+  id         String      @id @default(cuid())
+  entityType String
+  entityId   String
+  action     AuditAction
+  userId     String?
+  user       User?       @relation(fields: [userId], references: [id])
+  changes    String?
+  createdAt  DateTime    @default(now())
+
+  @@index([entityType, entityId])
+}
