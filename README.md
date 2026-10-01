@@ -60,3 +60,4 @@ Open http://localhost:3000 and sign in with one of the seeded demo accounts
 - Financial records are append-only where it matters: payments accumulate against
   invoices rather than overwriting a balance, and every create/update/approve
   action writes an `AuditLog` row.
+>>>>>>> origin/main
