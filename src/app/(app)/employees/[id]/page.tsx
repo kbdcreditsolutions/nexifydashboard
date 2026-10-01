@@ -109,18 +109,22 @@ export default async function EmployeeDetailPage({ params }: { params: Promise<{
 
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="rounded-lg border border-border bg-card p-4">
-          <h3 className="text-sm font-semibold mb-3">Rates</h3>
+          <h3 className="text-sm font-semibold mb-3">Details</h3>
           <dl className="grid grid-cols-2 gap-y-2 text-sm">
-            <dt className="text-muted-foreground">Billing Rate</dt>
-            <dd className="text-right tabular-nums">{formatUSD(employee.billingRate)}/hr</dd>
-            <dt className="text-muted-foreground">Hourly Cost</dt>
-            <dd className="text-right tabular-nums">{formatUSD(employee.hourlyCost)}/hr</dd>
-            <dt className="text-muted-foreground">Monthly Cost</dt>
-            <dd className="text-right tabular-nums">{formatUSD(employee.monthlyCost)}</dd>
             <dt className="text-muted-foreground">Standard Weekly Hours</dt>
             <dd className="text-right tabular-nums">{formatHours(employee.standardWeeklyHours)}</dd>
             <dt className="text-muted-foreground">Joined</dt>
             <dd className="text-right">{formatDate(employee.joiningDate)}</dd>
+            {showFinancials && (
+              <>
+                <dt className="text-muted-foreground">Billing Rate</dt>
+                <dd className="text-right tabular-nums">{formatUSD(employee.billingRate)}/hr</dd>
+                <dt className="text-muted-foreground">Hourly Cost</dt>
+                <dd className="text-right tabular-nums">{formatUSD(employee.hourlyCost)}/hr</dd>
+                <dt className="text-muted-foreground">Monthly Cost</dt>
+                <dd className="text-right tabular-nums">{formatUSD(employee.monthlyCost)}</dd>
+              </>
+            )}
           </dl>
         </div>
 

@@ -51,12 +51,19 @@ export async function employeeEconomicsForRange(range: DateRange, employeeId?: s
   return employees.map((emp) => {
     const billableHours = emp.timesheets.filter((t) => t.billable).reduce((s, t) => s + num(t.hours), 0);
     const nonBillableHours = emp.timesheets.filter((t) => !t.billable).reduce((s, t) => s + num(t.hours), 0);
-    const availableHours = availableHoursForRange(num(emp.standardWeeklyHours), range);
+
+    // Available capacity only counts while the employee is active and the
+    // range overlaps their tenure — a terminated employee, or one who hasn't
+    // joined yet, has zero expected capacity even if they logged no hours.
+    const effectiveStart = emp.joiningDate > range.start ? emp.joiningDate : range.start;
+    const effectiveEnd = emp.endDate && emp.endDate < range.end ? emp.endDate : range.end;
+    const hasCapacity = emp.status === "ACTIVE" && effectiveStart <= effectiveEnd;
+    const availableHours = hasCapacity ? availableHoursForRange(num(emp.standardWeeklyHours), { ...range, start: effectiveStart, end: effectiveEnd }) : 0;
     const billingRate = num(emp.billingRate);
     const hourlyCost = num(emp.hourlyCost);
     const revenue = billableHours * billingRate;
     const workedHours = billableHours + nonBillableHours;
-    const cost = workedHours > 0 ? workedHours * hourlyCost : availableHours * hourlyCost;
+    const cost = workedHours * hourlyCost;
     const contribution = revenue - cost;
     const margin = revenue > 0 ? (contribution / revenue) * 100 : 0;
     const utilization = availableHours > 0 ? (billableHours / availableHours) * 100 : 0;
@@ -104,7 +111,7 @@ export async function clientFinancialsForRange(range: DateRange, clientId?: stri
     include: {
       revenues: { where: { date: { gte: range.start, lte: range.end } } },
       invoices: { include: { payments: true } },
-      expenses: { where: { date: { gte: range.start, lte: range.end }, approvalStatus: "APPROVED" } },
+      expenses: { where: { date: { gte: range.start, lte: range.end }, approvalStatus: "APPROVED", deletedAt: null } },
       timesheets: {
         where: { date: { gte: range.start, lte: range.end }, status: "APPROVED", billable: true },
         include: { employee: true },
@@ -117,11 +124,12 @@ export async function clientFinancialsForRange(range: DateRange, clientId?: stri
   return clients.map((c) => {
     const totalRevenue = c.revenues.reduce((s, r) => s + num(r.amount), 0);
     const amountReceived = c.invoices.reduce((s, inv) => s + inv.payments.reduce((ps, p) => ps + num(p.amount), 0), 0);
-    const outstanding = c.invoices.reduce((s, inv) => {
+    const openInvoices = c.invoices.filter((inv) => inv.status === "SENT" || inv.status === "PARTIALLY_PAID" || inv.status === "OVERDUE");
+    const outstanding = openInvoices.reduce((s, inv) => {
       const paid = inv.payments.reduce((ps, p) => ps + num(p.amount), 0);
       return s + Math.max(0, num(inv.total) - paid);
     }, 0);
-    const overdue = c.invoices.reduce((s, inv) => {
+    const overdue = openInvoices.reduce((s, inv) => {
       const paid = inv.payments.reduce((ps, p) => ps + num(p.amount), 0);
       const bal = Math.max(0, num(inv.total) - paid);
       return s + (bal > 0 && inv.dueDate < now ? bal : 0);
@@ -177,7 +185,7 @@ export async function projectFinancialsForRange(range: DateRange, projectId?: st
     include: {
       client: true,
       revenues: { where: { date: { gte: range.start, lte: range.end } } },
-      expenses: { where: { date: { gte: range.start, lte: range.end }, approvalStatus: "APPROVED" } },
+      expenses: { where: { date: { gte: range.start, lte: range.end }, approvalStatus: "APPROVED", deletedAt: null } },
       timesheets: {
         where: { date: { gte: range.start, lte: range.end }, status: "APPROVED" },
         include: { employee: true },
@@ -250,7 +258,6 @@ export interface CompanyPL {
   netMarginPct: number;
 }
 
-const OPEX_GROUPS = new Set(["Technology", "Office", "Business"]);
 const OTHER_COST_GROUPS = new Set(["Financial"]);
 
 // Employee/contractor cost on the company P&L is sourced from the Expense
@@ -263,7 +270,7 @@ export async function companyPLForRange(range: DateRange): Promise<CompanyPL> {
   const [revenues, expenses] = await Promise.all([
     prisma.revenue.findMany({ where: { date: { gte: range.start, lte: range.end } } }),
     prisma.expense.findMany({
-      where: { date: { gte: range.start, lte: range.end }, approvalStatus: "APPROVED" },
+      where: { date: { gte: range.start, lte: range.end }, approvalStatus: "APPROVED", deletedAt: null },
       include: { category: true },
     }),
   ]);
@@ -292,9 +299,9 @@ export async function companyPLForRange(range: DateRange): Promise<CompanyPL> {
       else employeeCosts += amount;
     } else if (OTHER_COST_GROUPS.has(group)) {
       otherCosts += amount;
-    } else if (OPEX_GROUPS.has(group)) {
-      opexByCategory[e.category.name] = (opexByCategory[e.category.name] ?? 0) + amount;
     } else {
+      // OPEX_GROUPS (Technology/Office/Business) plus any custom group both
+      // land in operating expenses — there is no third bucket today.
       opexByCategory[e.category.name] = (opexByCategory[e.category.name] ?? 0) + amount;
     }
   }
@@ -339,6 +346,8 @@ export interface ARBucket {
 }
 
 export interface ClientARRow {
+  invoiceId: string;
+  invoiceNumber: string;
   clientId: string;
   clientName: string;
   invoiceTotal: number;
@@ -347,9 +356,9 @@ export interface ClientARRow {
   bucket: keyof Omit<ARBucket, "total">;
 }
 
-export async function accountsReceivableAging(asOf = new Date()): Promise<{ summary: ARBucket; rows: ClientARRow[] }> {
+export async function accountsReceivableAging(asOf = new Date(), clientId?: string): Promise<{ summary: ARBucket; rows: ClientARRow[] }> {
   const invoices = await prisma.invoice.findMany({
-    where: { status: { in: ["SENT", "PARTIALLY_PAID", "OVERDUE"] } },
+    where: { status: { in: ["SENT", "PARTIALLY_PAID", "OVERDUE"] }, ...(clientId ? { clientId } : {}) },
     include: { payments: true, client: true },
   });
 
@@ -371,6 +380,8 @@ export async function accountsReceivableAging(asOf = new Date()): Promise<{ summ
     summary[bucket] += outstanding;
     summary.total += outstanding;
     rows.push({
+      invoiceId: inv.id,
+      invoiceNumber: inv.invoiceNumber,
       clientId: inv.clientId,
       clientName: inv.client.name,
       invoiceTotal: num(inv.total),
@@ -397,7 +408,7 @@ export interface APSummary {
 export async function accountsPayableSummary(asOf = new Date()): Promise<APSummary> {
   const payables = await prisma.accountsPayable.findMany({ where: { status: { in: ["OPEN", "PARTIALLY_PAID", "OVERDUE"] } } });
   const weekEnd = new Date(asOf.getTime() + 7 * 86400000);
-  const monthEnd = new Date(asOf.getFullYear(), asOf.getMonth() + 1, 0);
+  const monthEnd = new Date(asOf.getFullYear(), asOf.getMonth() + 1, 0, 23, 59, 59, 999);
 
   let totalPayable = 0,
     dueThisWeek = 0,
@@ -408,8 +419,8 @@ export async function accountsPayableSummary(asOf = new Date()): Promise<APSumma
     const bal = num(p.balance);
     totalPayable += bal;
     if (p.dueDate < asOf) overdue += bal;
-    if (p.dueDate <= weekEnd) dueThisWeek += bal;
-    if (p.dueDate <= monthEnd) dueThisMonth += bal;
+    else if (p.dueDate <= weekEnd) dueThisWeek += bal;
+    if (p.dueDate >= asOf && p.dueDate <= monthEnd) dueThisMonth += bal;
   }
 
   return { totalPayable, dueThisWeek, dueThisMonth, overdue };
@@ -466,6 +477,15 @@ export interface CashForecastPoint {
   projectedCash: number;
 }
 
+function nextOccurrenceAfter(date: Date, frequency: string): Date {
+  const next = new Date(date);
+  if (frequency === "WEEKLY") next.setDate(next.getDate() + 7);
+  else if (frequency === "MONTHLY") next.setMonth(next.getMonth() + 1);
+  else if (frequency === "QUARTERLY") next.setMonth(next.getMonth() + 3);
+  else next.setFullYear(next.getFullYear() + 1);
+  return next;
+}
+
 export async function cashFlowForecast(horizons: number[] = [30, 60, 90], asOf = new Date()): Promise<CashForecastPoint[]> {
   const currentCash = await actualCashBalance(asOf);
   const [openInvoices, recurring, payables] = await Promise.all([
@@ -485,12 +505,28 @@ export async function cashFlowForecast(horizons: number[] = [30, 60, 90], asOf =
 
     const expectedOutflowsPayables = payables.reduce((s, p) => (p.dueDate <= horizonEnd ? s + num(p.balance) : s), 0);
 
+    // Walk actual occurrence dates from nextOccurrence forward (stepping by
+    // the expense's own frequency, stopping at any endDate) instead of a
+    // flat amount x occurrences-per-month x days/30 average — the average
+    // both double-counts a bill due later today (already captured the
+    // instant it posts) and keeps billing an expense past its endDate.
     let expectedOutflowsRecurring = 0;
     for (const r of recurring) {
       const amount = num(r.amount);
-      const occurrencesPerMonth = r.frequency === "WEEKLY" ? 4.33 : r.frequency === "MONTHLY" ? 1 : r.frequency === "QUARTERLY" ? 1 / 3 : 1 / 12;
-      const months = days / 30;
-      expectedOutflowsRecurring += amount * occurrencesPerMonth * months;
+      let occurrence = r.nextOccurrence;
+      let guard = 0;
+      // If nextOccurrence was never advanced past today (nothing in this
+      // app currently rolls it forward automatically), skip past-due dates
+      // without counting them — the forecast only projects what's ahead.
+      while (occurrence < asOf && guard < 500) {
+        occurrence = nextOccurrenceAfter(occurrence, r.frequency);
+        guard++;
+      }
+      while (occurrence <= horizonEnd && (!r.endDate || occurrence <= r.endDate) && guard < 500) {
+        expectedOutflowsRecurring += amount;
+        occurrence = nextOccurrenceAfter(occurrence, r.frequency);
+        guard++;
+      }
     }
 
     const expectedOutflows = expectedOutflowsPayables + expectedOutflowsRecurring;
@@ -511,7 +547,7 @@ export async function cashFlowForecast(horizons: number[] = [30, 60, 90], asOf =
 
 export async function expenseBreakdownForRange(range: DateRange): Promise<{ category: string; group: string; amount: number }[]> {
   const expenses = await prisma.expense.findMany({
-    where: { date: { gte: range.start, lte: range.end }, approvalStatus: "APPROVED" },
+    where: { date: { gte: range.start, lte: range.end }, approvalStatus: "APPROVED", deletedAt: null },
     include: { category: true },
   });
   const map = new Map<string, { group: string; amount: number }>();

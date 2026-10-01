@@ -27,7 +27,12 @@ interface DataTableProps<TData> {
 }
 
 function toCsvValue(v: unknown): string {
-  const s = v === null || v === undefined ? "" : String(v);
+  let s = v === null || v === undefined ? "" : String(v);
+  // CSV injection guard: a cell starting with =, +, -, or @ is interpreted
+  // as a live formula by Excel/Sheets when the export is opened — prefix
+  // with a leading apostrophe (a no-op in every spreadsheet app) so names,
+  // notes, and other free-text fields can't execute as formulas.
+  if (/^[=+\-@]/.test(s)) s = `'${s}`;
   if (s.includes(",") || s.includes('"') || s.includes("\n")) return `"${s.replace(/"/g, '""')}"`;
   return s;
 }

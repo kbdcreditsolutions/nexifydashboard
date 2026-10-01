@@ -35,10 +35,25 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       }
       return token;
     },
-    session({ session, token }) {
+    async session({ session, token }) {
       if (session.user) {
-        session.user.role = token.role as string;
         session.user.id = token.id as string;
+        session.user.role = token.role as string;
+        session.user.isActive = true;
+
+        // The JWT is long-lived, so role/active-status changes (a demotion,
+        // a deactivation, an Owner handing off Finance access) must take
+        // effect on the next request rather than waiting for the token to
+        // expire. Prisma can't run in the edge runtime that `middleware.ts`
+        // executes in, so this re-check only runs in the Node runtime —
+        // i.e. every server component and server action, which is where
+        // every actual page render and mutation happens; middleware only
+        // ever needs "is there a token at all", not the fresh role.
+        if (process.env.NEXT_RUNTIME !== "edge") {
+          const current = await prisma.user.findUnique({ where: { id: token.id as string }, select: { role: true, isActive: true } });
+          session.user.role = current?.role ?? "";
+          session.user.isActive = current?.isActive ?? false;
+        }
       }
       return session;
     },

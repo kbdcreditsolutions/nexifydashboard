@@ -1,11 +1,10 @@
 import { redirect } from "next/navigation";
-import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
 import { canViewFinancials } from "@/lib/rbac";
 import { KpiCard } from "@/components/kpi-card";
 import { ChartCard } from "@/components/charts/chart-card";
 import { ARAgingChart } from "@/components/charts/ar-aging-chart";
-import { ReceivablesTable, type ReceivableRow } from "@/components/payables/receivables-table";
+import { ReceivablesTable } from "@/components/payables/receivables-table";
 import { accountsReceivableAging } from "@/lib/calc";
 import { getSettings } from "@/lib/settings";
 import { formatUSD } from "@/lib/format";
@@ -16,25 +15,10 @@ export default async function ReceivablesPage({ searchParams }: { searchParams: 
   if (!session?.user || !canViewFinancials(session.user.role)) redirect("/dashboard");
 
   const { client: clientFilter } = await searchParams;
-  const [{ summary, rows: arRows }, settings, invoices] = await Promise.all([
-    accountsReceivableAging(),
+  const [{ summary, rows }, settings] = await Promise.all([
+    accountsReceivableAging(new Date(), clientFilter),
     getSettings(),
-    prisma.invoice.findMany({
-      where: { status: { in: ["SENT", "PARTIALLY_PAID", "OVERDUE"] }, ...(clientFilter ? { clientId: clientFilter } : {}) },
-      include: { client: true, payments: true },
-    }),
   ]);
-
-  const now = new Date();
-  const rows: ReceivableRow[] = invoices
-    .map((inv) => {
-      const received = inv.payments.reduce((s, p) => s + Number(p.amount), 0);
-      const outstanding = Math.max(0, Number(inv.total) - received);
-      const daysOverdue = Math.floor((now.getTime() - inv.dueDate.getTime()) / 86400000);
-      const bucket = daysOverdue <= 0 ? "current" : daysOverdue <= 30 ? "d1_30" : daysOverdue <= 60 ? "d31_60" : daysOverdue <= 90 ? "d61_90" : "d90plus";
-      return { invoiceId: inv.id, invoiceNumber: inv.invoiceNumber, clientId: inv.clientId, clientName: inv.client.name, invoiceTotal: Number(inv.total), received, outstanding, bucket };
-    })
-    .filter((r) => r.outstanding > 0);
 
   const largeReceivableThreshold = Number(settings.largeReceivableThreshold);
   const largeCount = rows.filter((r) => r.outstanding >= largeReceivableThreshold).length;
@@ -62,7 +46,7 @@ export default async function ReceivablesPage({ searchParams }: { searchParams: 
         <ARAgingChart summary={summary} />
       </ChartCard>
       <ReceivablesTable rows={rows} />
-      <p className="text-xs text-muted-foreground">{arRows.length} outstanding invoice line{arRows.length === 1 ? "" : "s"} across all clients.</p>
+      <p className="text-xs text-muted-foreground">{rows.length} outstanding invoice line{rows.length === 1 ? "" : "s"}{clientFilter ? " for this client." : " across all clients."}</p>
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
 import { canViewFinancials } from "@/lib/rbac";
 import { getSettings } from "@/lib/settings";
+import { withSequentialCodeRetry } from "@/lib/sequence";
 
 const generateSchema = z.object({
   clientId: z.string().min(1),
@@ -47,20 +48,22 @@ export async function generateInvoiceFromRevenue(formData: FormData) {
   const invoiceDate = new Date();
   const dueDate = new Date(invoiceDate.getTime() + termsDays * 86400000);
 
-  const count = await prisma.invoice.count();
-  const invoice = await prisma.invoice.create({
-    data: {
-      invoiceNumber: `INV-${invoiceDate.getFullYear()}-${String(count + 1).padStart(4, "0")}`,
-      clientId: parsed.clientId,
-      invoiceDate,
-      dueDate,
-      subtotal,
-      taxRate,
-      taxAmount,
-      total,
-      status: "DRAFT",
-      items: { create: Array.from(grouped.entries()).map(([desc, amt]) => ({ description: desc, quantity: 1, unitPrice: amt, amount: amt })) },
-    },
+  const invoice = await withSequentialCodeRetry(async () => {
+    const count = await prisma.invoice.count();
+    return prisma.invoice.create({
+      data: {
+        invoiceNumber: `INV-${invoiceDate.getFullYear()}-${String(count + 1).padStart(4, "0")}`,
+        clientId: parsed.clientId,
+        invoiceDate,
+        dueDate,
+        subtotal,
+        taxRate,
+        taxAmount,
+        total,
+        status: "DRAFT",
+        items: { create: Array.from(grouped.entries()).map(([desc, amt]) => ({ description: desc, quantity: 1, unitPrice: amt, amount: amt })) },
+      },
+    });
   });
 
   await prisma.revenue.updateMany({ where: { id: { in: revenues.map((r) => r.id) } }, data: { invoiceId: invoice.id } });
@@ -74,10 +77,22 @@ export async function generateInvoiceFromRevenue(formData: FormData) {
 export async function setInvoiceStatus(id: string, status: "SENT" | "CANCELLED") {
   const session = await auth();
   if (!session?.user || !canViewFinancials(session.user.role)) throw new Error("Not authorized.");
-  await prisma.invoice.update({ where: { id }, data: { status } });
-  await prisma.auditLog.create({ data: { entityType: "Invoice", entityId: id, action: "UPDATE", userId: session.user.id, changes: JSON.stringify({ status }) } });
+
+  await prisma.$transaction(async (tx) => {
+    await tx.invoice.update({ where: { id }, data: { status } });
+    if (status === "CANCELLED") {
+      // Unlink the revenue this invoice was carrying so it becomes
+      // un-invoiced again (generateInvoiceFromRevenue only picks up rows
+      // with invoiceId: null) instead of being permanently stranded off
+      // both the invoice list and every future invoice run.
+      await tx.revenue.updateMany({ where: { invoiceId: id }, data: { invoiceId: null, paymentStatus: "UNPAID" } });
+    }
+    await tx.auditLog.create({ data: { entityType: "Invoice", entityId: id, action: "UPDATE", userId: session.user.id, changes: JSON.stringify({ status }) } });
+  });
+
   revalidatePath("/invoices");
   revalidatePath(`/invoices/${id}`);
+  revalidatePath("/revenue");
 }
 
 const paymentSchema = z.object({
@@ -93,22 +108,41 @@ export async function recordPayment(invoiceId: string, formData: FormData) {
   if (!session?.user || !canViewFinancials(session.user.role)) throw new Error("Not authorized to record payments.");
 
   const parsed = paymentSchema.parse(Object.fromEntries(formData));
-  const invoice = await prisma.invoice.findUniqueOrThrow({ where: { id: invoiceId }, include: { payments: true } });
 
-  await prisma.payment.create({
-    data: { invoiceId, date: new Date(parsed.date), amount: parsed.amount, method: parsed.method || null, reference: parsed.reference || null, notes: parsed.notes || null },
+  // Everything below must be one atomic unit — a payment row, the invoice's
+  // status, linked revenue's payment status, and the cash inflow all have to
+  // agree, or a crash mid-way would record cash that was never actually
+  // reflected on the invoice. Re-reading the invoice+payments inside the
+  // transaction (rather than trusting a snapshot fetched before the write)
+  // also closes the race where two payments submitted back-to-back both
+  // compute totalPaid off the same stale balance.
+  await prisma.$transaction(async (tx) => {
+    const invoice = await tx.invoice.findUniqueOrThrow({ where: { id: invoiceId }, include: { payments: true } });
+    if (invoice.status === "CANCELLED") throw new Error("Cannot record a payment against a cancelled invoice.");
+
+    const alreadyPaid = invoice.payments.reduce((s, p) => s + Number(p.amount), 0);
+    const remainingBalance = Math.max(0, Number(invoice.total) - alreadyPaid);
+    if (remainingBalance <= 0) throw new Error("This invoice is already paid in full.");
+
+    // Clamp to the outstanding balance — the dialog's max attribute is a UI
+    // hint only, the server must not trust a client-supplied amount.
+    const amount = Math.min(parsed.amount, remainingBalance);
+
+    await tx.payment.create({
+      data: { invoiceId, date: new Date(parsed.date), amount, method: parsed.method || null, reference: parsed.reference || null, notes: parsed.notes || null },
+    });
+
+    const totalPaid = alreadyPaid + amount;
+    const newStatus = totalPaid >= Number(invoice.total) - 0.01 ? "PAID" : totalPaid > 0 ? "PARTIALLY_PAID" : invoice.status;
+    await tx.invoice.update({ where: { id: invoiceId }, data: { status: newStatus } });
+    await tx.revenue.updateMany({ where: { invoiceId }, data: { paymentStatus: newStatus === "PAID" ? "PAID" : newStatus === "PARTIALLY_PAID" ? "PARTIALLY_PAID" : "UNPAID" } });
+
+    await tx.cashTransaction.create({
+      data: { date: new Date(parsed.date), direction: "INFLOW", category: "Client Payments", amount, certainty: "ACTUAL", sourceType: "Payment", sourceId: invoiceId, notes: `${invoice.invoiceNumber} payment` },
+    });
+
+    await tx.auditLog.create({ data: { entityType: "Invoice", entityId: invoiceId, action: "UPDATE", userId: session.user.id, changes: JSON.stringify({ paymentRecorded: amount }) } });
   });
-
-  const totalPaid = invoice.payments.reduce((s, p) => s + Number(p.amount), 0) + parsed.amount;
-  const newStatus = totalPaid >= Number(invoice.total) - 0.01 ? "PAID" : totalPaid > 0 ? "PARTIALLY_PAID" : invoice.status;
-  await prisma.invoice.update({ where: { id: invoiceId }, data: { status: newStatus } });
-  await prisma.revenue.updateMany({ where: { invoiceId }, data: { paymentStatus: newStatus === "PAID" ? "PAID" : newStatus === "PARTIALLY_PAID" ? "PARTIALLY_PAID" : "UNPAID" } });
-
-  await prisma.cashTransaction.create({
-    data: { date: new Date(parsed.date), direction: "INFLOW", category: "Client Payments", amount: parsed.amount, certainty: "ACTUAL", sourceType: "Payment", sourceId: invoiceId, notes: `${invoice.invoiceNumber} payment` },
-  });
-
-  await prisma.auditLog.create({ data: { entityType: "Invoice", entityId: invoiceId, action: "UPDATE", userId: session.user.id, changes: JSON.stringify({ paymentRecorded: parsed.amount }) } });
 
   revalidatePath("/invoices");
   revalidatePath(`/invoices/${invoiceId}`);

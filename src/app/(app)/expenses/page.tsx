@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
-import { canApproveExpenses } from "@/lib/rbac";
+import { canApproveExpenses, isEmployeeOnly } from "@/lib/rbac";
 import { ExpenseFormDialog } from "@/components/expenses/expense-form-dialog";
 import { ExpensesTable, type ExpenseRow } from "@/components/expenses/expenses-table";
 import { PeriodSelector } from "@/components/period-selector";
@@ -15,9 +15,19 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
   const session = await auth();
   const canApprove = canApproveExpenses(session?.user.role ?? "");
 
+  // A plain Employee (no approval rights) sees only their own submissions —
+  // company-wide spend (including Payroll rows) is not theirs to browse.
+  // Owner/Finance/Operations/Manager all have a legitimate operational or
+  // financial reason to see the full ledger.
+  let ownEmployeeId: string | null = null;
+  if (session?.user && isEmployeeOnly(session.user.role)) {
+    const own = await prisma.employee.findUnique({ where: { userId: session.user.id } });
+    ownEmployeeId = own?.id ?? "none";
+  }
+
   const [expenses, categories, vendors, clients, projects, employees] = await Promise.all([
     prisma.expense.findMany({
-      where: { date: { gte: range.start, lte: range.end } },
+      where: { date: { gte: range.start, lte: range.end }, ...(ownEmployeeId ? { employeeId: ownEmployeeId } : {}) },
       include: { category: true, vendor: true, client: true, project: true },
       orderBy: { date: "desc" },
     }),
@@ -51,7 +61,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold text-foreground">Expenses</h2>
-          <p className="text-sm text-muted-foreground">Centralized expense tracking across all categories</p>
+          <p className="text-sm text-muted-foreground">{ownEmployeeId ? "Your submitted expenses" : "Centralized expense tracking across all categories"}</p>
         </div>
         <div className="flex items-center gap-2">
           <PeriodSelector />

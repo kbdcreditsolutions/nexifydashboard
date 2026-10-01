@@ -1,5 +1,8 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { AlertTriangle, AlertCircle, Info } from "lucide-react";
+import { auth } from "@/auth";
+import { canViewFinancials } from "@/lib/rbac";
 import { computeAlerts } from "@/lib/alerts";
 import { cn } from "@/lib/utils";
 
@@ -12,6 +15,9 @@ const SEVERITY_STYLE: Record<string, string> = {
 const SEVERITY_ICON = { CRITICAL: AlertCircle, WARNING: AlertTriangle, INFO: Info };
 
 export default async function AlertsPage() {
+  const session = await auth();
+  if (!session?.user || !canViewFinancials(session.user.role)) redirect("/dashboard");
+
   const alerts = await computeAlerts();
   const critical = alerts.filter((a) => a.severity === "CRITICAL").length;
   const warning = alerts.filter((a) => a.severity === "WARNING").length;

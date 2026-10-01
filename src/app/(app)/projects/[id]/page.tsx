@@ -29,7 +29,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     prisma.service.findMany({ select: { id: true, name: true } }),
     projectFinancialsForRange(currentMonthRange(), id),
     projectFinancialsForRange(ytdRange(), id),
-    projectFinancialsForRange({ start: new Date("2020-01-01"), end: new Date("2030-12-31"), label: "All Time" }, id),
+    projectFinancialsForRange({ start: new Date(new Date().getFullYear() - 50, 0, 1), end: new Date(new Date().getFullYear() + 50, 0, 1), label: "All Time" }, id),
     prisma.employee.findMany({ where: { deletedAt: null, status: "ACTIVE" }, select: { id: true, name: true } }),
   ]);
   if (!project) notFound();
@@ -154,10 +154,14 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             <dd className="text-right">{formatDate(project.startDate)}</dd>
             <dt className="text-muted-foreground">End Date</dt>
             <dd className="text-right">{formatDate(project.endDate)}</dd>
-            <dt className="text-muted-foreground">Contract Value</dt>
-            <dd className="text-right tabular-nums">{formatUSD(project.contractValue)}</dd>
-            <dt className="text-muted-foreground">Budget</dt>
-            <dd className="text-right tabular-nums">{formatUSD(project.budget)}</dd>
+            {showFinancials && (
+              <>
+                <dt className="text-muted-foreground">Contract Value</dt>
+                <dd className="text-right tabular-nums">{formatUSD(project.contractValue)}</dd>
+                <dt className="text-muted-foreground">Budget</dt>
+                <dd className="text-right tabular-nums">{formatUSD(project.budget)}</dd>
+              </>
+            )}
           </dl>
         </div>
 

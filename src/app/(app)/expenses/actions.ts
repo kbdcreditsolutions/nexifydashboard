@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
 import { canApproveExpenses } from "@/lib/rbac";
+import { withSequentialCodeRetry } from "@/lib/sequence";
 
 const expenseSchema = z.object({
   date: z.string().min(1),
@@ -27,26 +28,37 @@ export async function createExpense(formData: FormData) {
   if (!session?.user) throw new Error("Not authorized.");
 
   const parsed = expenseSchema.parse(Object.fromEntries(formData));
-  const count = await prisma.expense.count();
 
-  const created = await prisma.expense.create({
-    data: {
-      expenseCode: `EXP-${String(count + 1).padStart(5, "0")}`,
-      date: new Date(parsed.date),
-      categoryId: parsed.categoryId,
-      subcategory: parsed.subcategory || null,
-      vendorId: parsed.vendorId || null,
-      amount: parsed.amount,
-      paymentMethod: parsed.paymentMethod || null,
-      paidBy: parsed.paidBy,
-      employeeId: parsed.employeeId || null,
-      clientId: parsed.clientId || null,
-      projectId: parsed.projectId || null,
-      recurring: parsed.recurring ?? false,
-      receiptUrl: parsed.receiptUrl || null,
-      notes: parsed.notes || null,
-      approvalStatus: "PENDING",
-    },
+  // A non-approver can only attribute an expense to their own employee
+  // record — otherwise anyone could post a reimbursable expense that gets
+  // paid out to a colleague instead of themselves.
+  let employeeId = parsed.employeeId || null;
+  if (!canApproveExpenses(session.user.role)) {
+    const own = await prisma.employee.findUnique({ where: { userId: session.user.id } });
+    employeeId = own?.id ?? null;
+  }
+
+  const created = await withSequentialCodeRetry(async () => {
+    const count = await prisma.expense.count();
+    return prisma.expense.create({
+      data: {
+        expenseCode: `EXP-${String(count + 1).padStart(5, "0")}`,
+        date: new Date(parsed.date),
+        categoryId: parsed.categoryId,
+        subcategory: parsed.subcategory || null,
+        vendorId: parsed.vendorId || null,
+        amount: parsed.amount,
+        paymentMethod: parsed.paymentMethod || null,
+        paidBy: parsed.paidBy,
+        employeeId,
+        clientId: parsed.clientId || null,
+        projectId: parsed.projectId || null,
+        recurring: parsed.recurring ?? false,
+        receiptUrl: parsed.receiptUrl || null,
+        notes: parsed.notes || null,
+        approvalStatus: "PENDING",
+      },
+    });
   });
   await prisma.auditLog.create({ data: { entityType: "Expense", entityId: created.id, action: "CREATE", userId: session.user.id, changes: JSON.stringify(parsed) } });
 

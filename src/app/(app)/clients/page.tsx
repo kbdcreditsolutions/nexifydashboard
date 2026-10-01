@@ -19,6 +19,9 @@ export default async function ClientsPage() {
   ]);
   const finById = new Map(financials.map((f) => [f.clientId, f]));
 
+  // See employees/page.tsx: financial figures are zeroed here, not just
+  // hidden in the table, since the table is a client component and the
+  // RSC payload would otherwise carry them regardless of which columns render.
   const rows: ClientRow[] = clients.map((c) => {
     const f = finById.get(c.id);
     return {
@@ -28,9 +31,9 @@ export default async function ClientsPage() {
       accountManager: c.accountManager?.name ?? "Unassigned",
       paymentTerms: c.paymentTerms,
       status: c.status,
-      totalRevenue: f?.totalRevenue ?? 0,
-      outstanding: f?.outstanding ?? 0,
-      margin: f?.margin ?? 0,
+      totalRevenue: showFinancials ? (f?.totalRevenue ?? 0) : 0,
+      outstanding: showFinancials ? (f?.outstanding ?? 0) : 0,
+      margin: showFinancials ? (f?.margin ?? 0) : 0,
     };
   });
 

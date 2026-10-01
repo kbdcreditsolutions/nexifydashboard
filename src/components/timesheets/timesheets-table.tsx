@@ -54,17 +54,28 @@ export function TimesheetsTable({ rows, canApprove }: { rows: TimesheetRow[]; ca
           {
             id: "actions",
             header: "",
-            cell: ({ row }) =>
-              row.original.status === "SUBMITTED" ? (
-                <div className="flex items-center gap-1">
-                  <Button size="icon" variant="outline" className="h-7 w-7 text-positive" disabled={pending} onClick={() => act(row.original.id, "APPROVED")}>
-                    <Check className="h-3.5 w-3.5" />
+            cell: ({ row }) => {
+              if (row.original.status === "SUBMITTED") {
+                return (
+                  <div className="flex items-center gap-1">
+                    <Button size="icon" variant="outline" className="h-7 w-7 text-positive" disabled={pending} onClick={() => act(row.original.id, "APPROVED")}>
+                      <Check className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button size="icon" variant="outline" className="h-7 w-7 text-negative" disabled={pending} onClick={() => act(row.original.id, "REJECTED")}>
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                );
+              }
+              if (row.original.status === "APPROVED") {
+                return (
+                  <Button size="sm" variant="outline" className="h-7 text-negative" disabled={pending} onClick={() => act(row.original.id, "REJECTED")}>
+                    Undo Approval
                   </Button>
-                  <Button size="icon" variant="outline" className="h-7 w-7 text-negative" disabled={pending} onClick={() => act(row.original.id, "REJECTED")}>
-                    <X className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              ) : null,
+                );
+              }
+              return null;
+            },
           },
         ] as ColumnDef<TimesheetRow, unknown>[])
       : []),

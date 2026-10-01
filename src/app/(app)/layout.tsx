@@ -7,7 +7,7 @@ import { computeAlerts } from "@/lib/alerts";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user || !session.user.isActive) redirect("/login");
 
   const alertCount = canViewFinancials(session.user.role) ? (await computeAlerts()).length : 0;
 

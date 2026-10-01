@@ -34,11 +34,21 @@ export async function createPayable(formData: FormData) {
   revalidatePath("/payables");
 }
 
-export async function recordPayablePayment(id: string, amount: number) {
+const paymentAmountSchema = z.number().positive().finite();
+
+export async function recordPayablePayment(id: string, rawAmount: number) {
   const session = await auth();
   if (!session?.user || !canViewFinancials(session.user.role)) throw new Error("Not authorized to record payments.");
 
+  const parsedAmount = paymentAmountSchema.parse(rawAmount);
+
   const payable = await prisma.accountsPayable.findUniqueOrThrow({ where: { id } });
+  const currentBalance = Number(payable.balance);
+  if (currentBalance <= 0) throw new Error("This payable is already paid in full.");
+
+  // Clamp to the outstanding balance — the UI only offers "pay in full", but
+  // the server must not trust a client-supplied amount to be in range.
+  const amount = Math.min(parsedAmount, currentBalance);
   const newPaid = Number(payable.paidAmount) + amount;
   const newBalance = Math.max(0, Number(payable.amount) - newPaid);
   const status = newBalance <= 0.01 ? "PAID" : newPaid > 0 ? "PARTIALLY_PAID" : "OPEN";

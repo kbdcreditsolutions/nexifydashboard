@@ -55,7 +55,10 @@ export async function deactivateEmployee(id: string) {
   if (!session?.user || !canManageEmployees(session.user.role)) {
     throw new Error("Not authorized to manage employees.");
   }
-  await prisma.employee.update({ where: { id }, data: { status: "INACTIVE", deletedAt: null } });
-  await prisma.auditLog.create({ data: { entityType: "Employee", entityId: id, action: "SOFT_DELETE", userId: session.user.id } });
+  // Status-only change, not a soft delete: an inactive/terminated employee
+  // must stay visible in lists and historical reports (their past
+  // timesheets/revenue/cost remain attributable), so deletedAt is untouched.
+  await prisma.employee.update({ where: { id }, data: { status: "INACTIVE" } });
+  await prisma.auditLog.create({ data: { entityType: "Employee", entityId: id, action: "UPDATE", userId: session.user.id, changes: JSON.stringify({ status: "INACTIVE" }) } });
   revalidatePath("/employees");
 }

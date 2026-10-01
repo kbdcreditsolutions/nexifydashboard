@@ -22,6 +22,9 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   ]);
   const finById = new Map(financials.map((f) => [f.projectId, f]));
 
+  // See employees/page.tsx: financial figures are zeroed here, not just
+  // hidden in the table, since the table is a client component and the
+  // RSC payload would otherwise carry them regardless of which columns render.
   const rows: ProjectRow[] = projects.map((p) => {
     const f = finById.get(p.id);
     return {
@@ -31,9 +34,9 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
       clientName: p.client.name,
       billingModel: p.billingModel,
       status: p.status,
-      budget: Number(p.budget),
-      revenue: f?.revenue ?? 0,
-      margin: f?.margin ?? 0,
+      budget: showFinancials ? Number(p.budget) : 0,
+      revenue: showFinancials ? (f?.revenue ?? 0) : 0,
+      margin: showFinancials ? (f?.margin ?? 0) : 0,
       alertCount: f?.alerts.length ?? 0,
     };
   });

@@ -21,7 +21,7 @@ export async function computeAlerts(): Promise<AppAlert[]> {
 
   // Invoice overdue + large receivable
   const invoices = await prisma.invoice.findMany({
-    where: { status: { in: ["SENT", "PARTIALLY_PAID"] } },
+    where: { status: { in: ["SENT", "PARTIALLY_PAID", "OVERDUE"] } },
     include: { payments: true, client: true },
   });
   const largeThreshold = Number(settings.largeReceivableThreshold);
@@ -39,7 +39,7 @@ export async function computeAlerts(): Promise<AppAlert[]> {
   }
 
   // Project over budget / margin below threshold
-  const projectFin = await projectFinancialsForRange({ start: new Date("2020-01-01"), end: new Date("2030-12-31"), label: "All Time" });
+  const projectFin = await projectFinancialsForRange({ start: new Date(now.getFullYear() - 50, 0, 1), end: new Date(now.getFullYear() + 50, 0, 1), label: "All Time" });
   for (const p of projectFin) {
     if (p.alerts.includes("Cost exceeds budget")) {
       alerts.push({ type: "PROJECT_OVER_BUDGET", severity: "CRITICAL", message: `${p.name} (${p.clientName}) is over budget — cost $${p.totalCost.toFixed(0)} vs budget $${p.budget.toFixed(0)}`, href: `/projects/${p.projectId}` });
@@ -66,8 +66,8 @@ export async function computeAlerts(): Promise<AppAlert[]> {
   // Expense spike (category vs prior month)
   const spikeThresholdPct = Number(settings.expenseSpikeThresholdPct);
   const [curExpenses, prevExpenses] = await Promise.all([
-    prisma.expense.findMany({ where: { date: { gte: currentMonthRange().start, lte: currentMonthRange().end }, approvalStatus: "APPROVED" }, include: { category: true } }),
-    prisma.expense.findMany({ where: { date: { gte: previousMonthRange().start, lte: previousMonthRange().end }, approvalStatus: "APPROVED" }, include: { category: true } }),
+    prisma.expense.findMany({ where: { date: { gte: currentMonthRange().start, lte: currentMonthRange().end }, approvalStatus: "APPROVED", deletedAt: null }, include: { category: true } }),
+    prisma.expense.findMany({ where: { date: { gte: previousMonthRange().start, lte: previousMonthRange().end }, approvalStatus: "APPROVED", deletedAt: null }, include: { category: true } }),
   ]);
   const curByCat = new Map<string, number>();
   for (const e of curExpenses) curByCat.set(e.category.name, (curByCat.get(e.category.name) ?? 0) + num(e.amount));
@@ -88,7 +88,7 @@ export async function computeAlerts(): Promise<AppAlert[]> {
   }
 
   // Upcoming payables (next 7 days)
-  const upcomingPayables = await prisma.accountsPayable.findMany({ where: { status: { in: ["OPEN", "PARTIALLY_PAID"] }, dueDate: { lte: addDays(now, 7) } }, include: { vendor: true } });
+  const upcomingPayables = await prisma.accountsPayable.findMany({ where: { status: { in: ["OPEN", "PARTIALLY_PAID", "OVERDUE"] }, dueDate: { lte: addDays(now, 7) } }, include: { vendor: true } });
   for (const p of upcomingPayables) {
     alerts.push({ type: "PAYABLE_UPCOMING", severity: p.dueDate < now ? "CRITICAL" : "INFO", message: `${p.vendor.name} payable of $${num(p.balance).toFixed(2)} due ${p.dueDate.toLocaleDateString()}`, href: "/payables" });
   }

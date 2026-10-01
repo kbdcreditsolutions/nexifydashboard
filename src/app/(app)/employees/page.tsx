@@ -18,6 +18,10 @@ export default async function EmployeesPage() {
   ]);
   const econById = new Map<string, EmployeeEconomics>(econ.map((e) => [e.employeeId, e]));
 
+  // Zero out compensation fields server-side for non-financial roles rather
+  // than just hiding the table columns — the table is a client component,
+  // so anything in `rows` ships in the RSC payload and is readable from
+  // devtools regardless of which columns actually render.
   const rows: EmployeeRow[] = employees.map((e) => {
     const ec = econById.get(e.id);
     return {
@@ -28,10 +32,10 @@ export default async function EmployeesPage() {
       department: e.department,
       employmentType: e.employmentType,
       status: e.status,
-      billingRate: Number(e.billingRate),
-      hourlyCost: Number(e.hourlyCost),
+      billingRate: showFinancials ? Number(e.billingRate) : 0,
+      hourlyCost: showFinancials ? Number(e.hourlyCost) : 0,
       utilization: ec?.utilization ?? 0,
-      revenue: ec?.revenue ?? 0,
+      revenue: showFinancials ? (ec?.revenue ?? 0) : 0,
     };
   });
 
