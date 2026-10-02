@@ -24,6 +24,7 @@ export default async function RevenuePage({ searchParams }: { searchParams: Prom
         ...(clientFilter ? { clientId: clientFilter } : {}),
         ...(employeeFilter ? { employeeId: employeeFilter } : {}),
       },
+      relationLoadStrategy: "join",
       include: { client: true, project: true, employee: true, service: true, invoice: true },
       orderBy: { date: "desc" },
     }),

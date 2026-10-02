@@ -114,12 +114,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
             <span className="flex items-center gap-1.5 text-sm font-medium text-amber-800">
               <AlertTriangle className="h-4 w-4" /> Needs Attention
             </span>
-            <Link href="/alerts" className="text-xs text-amber-800 underline underline-offset-2">View all {alerts.length}</Link>
+            <Link href="/alerts" prefetch={false} className="text-xs text-amber-800 underline underline-offset-2">View all {alerts.length}</Link>
           </div>
           <ul className="text-sm text-amber-800 space-y-1">
             {topAlerts.map((a, i) => (
               <li key={i}>
-                {a.href ? <Link href={a.href} className="hover:underline">{a.message}</Link> : a.message}
+                {a.href ? <Link href={a.href} prefetch={false} className="hover:underline">{a.message}</Link> : a.message}
               </li>
             ))}
           </ul>
@@ -201,10 +201,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         Need the underlying records?{" "}
         {showFinancials && (
           <>
-            <Link href="/revenue" className="underline underline-offset-2">View Revenue</Link> &middot;{" "}
+            <Link href="/revenue" prefetch={false} className="underline underline-offset-2">View Revenue</Link> &middot;{" "}
           </>
         )}
-        <Link href="/timesheets" className="underline underline-offset-2">View Timesheets</Link>
+        <Link href="/timesheets" prefetch={false} className="underline underline-offset-2">View Timesheets</Link>
       </p>
     </div>
   );

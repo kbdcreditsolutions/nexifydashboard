@@ -41,6 +41,7 @@ function availableHoursForRange(standardWeeklyHours: number, range: DateRange): 
 export async function employeeEconomicsForRange(range: DateRange, employeeId?: string): Promise<EmployeeEconomics[]> {
   const employees = await prisma.employee.findMany({
     where: { deletedAt: null, ...(employeeId ? { id: employeeId } : {}) },
+    relationLoadStrategy: "join",
     include: {
       timesheets: {
         where: { date: { gte: range.start, lte: range.end }, status: "APPROVED" },
@@ -108,6 +109,7 @@ export interface ClientFinancials {
 export async function clientFinancialsForRange(range: DateRange, clientId?: string): Promise<ClientFinancials[]> {
   const clients = await prisma.client.findMany({
     where: { deletedAt: null, ...(clientId ? { id: clientId } : {}) },
+    relationLoadStrategy: "join",
     include: {
       revenues: { where: { date: { gte: range.start, lte: range.end } } },
       invoices: { include: { payments: true } },
@@ -182,6 +184,7 @@ export interface ProjectFinancials {
 export async function projectFinancialsForRange(range: DateRange, projectId?: string): Promise<ProjectFinancials[]> {
   const projects = await prisma.project.findMany({
     where: { deletedAt: null, ...(projectId ? { id: projectId } : {}) },
+    relationLoadStrategy: "join",
     include: {
       client: true,
       revenues: { where: { date: { gte: range.start, lte: range.end } } },
@@ -359,6 +362,7 @@ export interface ClientARRow {
 export async function accountsReceivableAging(asOf = new Date(), clientId?: string): Promise<{ summary: ARBucket; rows: ClientARRow[] }> {
   const invoices = await prisma.invoice.findMany({
     where: { status: { in: ["SENT", "PARTIALLY_PAID", "OVERDUE"] }, ...(clientId ? { clientId } : {}) },
+    relationLoadStrategy: "join",
     include: { payments: true, client: true },
   });
 
@@ -487,9 +491,9 @@ function nextOccurrenceAfter(date: Date, frequency: string): Date {
 }
 
 export async function cashFlowForecast(horizons: number[] = [30, 60, 90], asOf = new Date()): Promise<CashForecastPoint[]> {
-  const currentCash = await actualCashBalance(asOf);
-  const [openInvoices, recurring, payables] = await Promise.all([
-    prisma.invoice.findMany({ where: { status: { in: ["SENT", "PARTIALLY_PAID", "OVERDUE"] } }, include: { payments: true } }),
+  const [currentCash, openInvoices, recurring, payables] = await Promise.all([
+    actualCashBalance(asOf),
+    prisma.invoice.findMany({ where: { status: { in: ["SENT", "PARTIALLY_PAID", "OVERDUE"] } }, relationLoadStrategy: "join", include: { payments: true } }),
     prisma.recurringExpense.findMany({ where: { active: true } }),
     prisma.accountsPayable.findMany({ where: { status: { in: ["OPEN", "PARTIALLY_PAID", "OVERDUE"] } } }),
   ]);
@@ -641,6 +645,7 @@ export interface ServiceProfitability {
 
 export async function profitabilityByService(range: DateRange): Promise<ServiceProfitability[]> {
   const services = await prisma.service.findMany({
+    relationLoadStrategy: "join",
     include: {
       revenues: { where: { date: { gte: range.start, lte: range.end } } },
       timesheets: { where: { date: { gte: range.start, lte: range.end }, status: "APPROVED" }, include: { employee: true } },

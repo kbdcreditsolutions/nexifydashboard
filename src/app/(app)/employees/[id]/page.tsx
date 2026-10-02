@@ -18,31 +18,32 @@ export default async function EmployeeDetailPage({ params }: { params: Promise<{
   const canManage = canManageEmployees(session?.user.role ?? "");
   const showFinancials = canViewFinancials(session?.user.role ?? "");
 
-  const employee = await prisma.employee.findUnique({
-    where: { id },
-    include: {
-      projectAssignments: { include: { project: { include: { client: true } } } },
-      clientAssignments: { include: { client: true } },
-    },
-  });
-  if (!employee) notFound();
-
-  const [mtdEcon, ytdEcon, recentTimesheets] = await Promise.all([
+  const [employee, mtdEcon, ytdEcon, recentTimesheets] = await Promise.all([
+    prisma.employee.findUnique({
+      where: { id },
+      relationLoadStrategy: "join",
+      include: {
+        projectAssignments: { include: { project: { include: { client: true } } } },
+        clientAssignments: { include: { client: true } },
+      },
+    }),
     employeeEconomicsForRange(currentMonthRange(), id),
     employeeEconomicsForRange(ytdRange(), id),
     prisma.timesheet.findMany({
       where: { employeeId: id },
       orderBy: { date: "desc" },
       take: 10,
+      relationLoadStrategy: "join",
       include: { project: true, client: true },
     }),
   ]);
+  if (!employee) notFound();
   const mtd = mtdEcon[0];
   const ytd = ytdEcon[0];
 
   return (
     <div className="space-y-5">
-      <Link href="/employees" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+      <Link href="/employees" prefetch={false} className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
         <ArrowLeft className="h-3.5 w-3.5" /> Back to Employees
       </Link>
 
@@ -135,7 +136,7 @@ export default async function EmployeeDetailPage({ params }: { params: Promise<{
             <div className="flex flex-wrap gap-1.5">
               {employee.clientAssignments.length === 0 && <span className="text-sm text-muted-foreground">None</span>}
               {employee.clientAssignments.map((ca) => (
-                <Link key={ca.id} href={`/clients/${ca.clientId}`} className="text-xs rounded-full bg-accent px-2.5 py-1 hover:underline">
+                <Link key={ca.id} href={`/clients/${ca.clientId}`} prefetch={false} className="text-xs rounded-full bg-accent px-2.5 py-1 hover:underline">
                   {ca.client.name}
                 </Link>
               ))}
@@ -144,7 +145,7 @@ export default async function EmployeeDetailPage({ params }: { params: Promise<{
             <div className="flex flex-wrap gap-1.5">
               {employee.projectAssignments.length === 0 && <span className="text-sm text-muted-foreground">None</span>}
               {employee.projectAssignments.map((pa) => (
-                <Link key={pa.id} href={`/projects/${pa.projectId}`} className="text-xs rounded-full bg-accent px-2.5 py-1 hover:underline">
+                <Link key={pa.id} href={`/projects/${pa.projectId}`} prefetch={false} className="text-xs rounded-full bg-accent px-2.5 py-1 hover:underline">
                   {pa.project.name}
                 </Link>
               ))}
@@ -156,7 +157,7 @@ export default async function EmployeeDetailPage({ params }: { params: Promise<{
       <section className="rounded-lg border border-border bg-card p-4">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold">Recent Timesheets</h3>
-          <Link href={`/timesheets?employee=${employee.id}`} className="text-xs text-muted-foreground hover:underline">
+          <Link href={`/timesheets?employee=${employee.id}`} prefetch={false} className="text-xs text-muted-foreground hover:underline">
             View all
           </Link>
         </div>

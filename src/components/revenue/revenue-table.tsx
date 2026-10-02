@@ -28,7 +28,7 @@ export function RevenueTable({ rows }: { rows: RevenueRow[] }) {
     {
       accessorKey: "clientName",
       header: "Client",
-      cell: ({ row }) => <Link href={`/clients/${row.original.clientId}`} className="hover:underline">{row.original.clientName}</Link>,
+      cell: ({ row }) => <Link href={`/clients/${row.original.clientId}`} prefetch={false} className="hover:underline">{row.original.clientName}</Link>,
     },
     { accessorKey: "projectName", header: "Project" },
     { accessorKey: "employeeName", header: "Employee" },

@@ -30,12 +30,12 @@ export function ReceivablesTable({ rows }: { rows: ReceivableRow[] }) {
     {
       accessorKey: "invoiceNumber",
       header: "Invoice",
-      cell: ({ row }) => <Link href={`/invoices/${row.original.invoiceId}`} className="font-medium hover:underline">{row.original.invoiceNumber}</Link>,
+      cell: ({ row }) => <Link href={`/invoices/${row.original.invoiceId}`} prefetch={false} className="font-medium hover:underline">{row.original.invoiceNumber}</Link>,
     },
     {
       accessorKey: "clientName",
       header: "Client",
-      cell: ({ row }) => <Link href={`/clients/${row.original.clientId}`} className="hover:underline">{row.original.clientName}</Link>,
+      cell: ({ row }) => <Link href={`/clients/${row.original.clientId}`} prefetch={false} className="hover:underline">{row.original.clientName}</Link>,
     },
     { accessorKey: "invoiceTotal", header: "Invoice Amount", cell: ({ getValue }) => <span className="tabular-nums">{formatUSD(getValue() as number)}</span> },
     { accessorKey: "received", header: "Received", cell: ({ getValue }) => <span className="tabular-nums text-positive">{formatUSD(getValue() as number)}</span> },

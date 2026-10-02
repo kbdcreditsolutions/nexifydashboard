@@ -1,9 +1,10 @@
+import { cache } from "react";
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 
-export const { handlers, signIn, signOut, auth } = NextAuth({
+export const { handlers, signIn, signOut, auth: authEdge } = NextAuth({
   session: { strategy: "jwt" },
   pages: { signIn: "/login" },
   providers: [
@@ -59,3 +60,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     },
   },
 });
+
+// `auth()` is called from the shared layout *and* independently from every
+// page's own RBAC guard (revenue/invoices/settings/etc. each re-check the
+// role themselves rather than trusting the layout already did) — without
+// memoization that's the session callback's database read firing 2-3+
+// times per single navigation. React's cache() dedupes repeat zero-arg
+// calls within one request. Only valid in the Node/RSC runtime, so
+// middleware.ts (edge runtime) imports `authEdge` above instead.
+export const auth = cache(authEdge);

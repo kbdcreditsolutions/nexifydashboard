@@ -25,7 +25,7 @@ export function ClientsTable({ rows, showFinancials }: { rows: ClientRow[]; show
       accessorKey: "name",
       header: "Client",
       cell: ({ row }) => (
-        <Link href={`/clients/${row.original.id}`} className="font-medium text-foreground hover:underline">
+        <Link href={`/clients/${row.original.id}`} prefetch={false} className="font-medium text-foreground hover:underline">
           {row.original.name}
         </Link>
       ),

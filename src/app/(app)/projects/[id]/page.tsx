@@ -22,6 +22,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const [project, clients, managers, services, mtdList, ytdList, allTimeList, employees] = await Promise.all([
     prisma.project.findUnique({
       where: { id },
+      relationLoadStrategy: "join",
       include: { client: true, projectManager: true, service: true, assignments: { include: { employee: true } } },
     }),
     prisma.client.findMany({ where: { deletedAt: null }, select: { id: true, name: true } }),
@@ -42,7 +43,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
 
   return (
     <div className="space-y-5">
-      <Link href="/projects" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+      <Link href="/projects" prefetch={false} className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
         <ArrowLeft className="h-3.5 w-3.5" /> Back to Projects
       </Link>
 
@@ -54,7 +55,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           </div>
           <p className="text-sm text-muted-foreground">
             {project.projectCode} &middot;{" "}
-            <Link href={`/clients/${project.clientId}`} className="hover:underline">{project.client.name}</Link> &middot;{" "}
+            <Link href={`/clients/${project.clientId}`} prefetch={false} className="hover:underline">{project.client.name}</Link> &middot;{" "}
             {project.service?.name ?? "No service set"} &middot; {project.billingModel.replace("_", " ")}
           </p>
         </div>

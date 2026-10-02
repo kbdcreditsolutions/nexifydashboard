@@ -27,7 +27,7 @@ export function ProjectsTable({ rows, showFinancials }: { rows: ProjectRow[]; sh
       accessorKey: "name",
       header: "Project",
       cell: ({ row }) => (
-        <Link href={`/projects/${row.original.id}`} className="font-medium text-foreground hover:underline inline-flex items-center gap-1.5">
+        <Link href={`/projects/${row.original.id}`} prefetch={false} className="font-medium text-foreground hover:underline inline-flex items-center gap-1.5">
           {row.original.name}
           {row.original.alertCount > 0 && <AlertTriangle className="h-3.5 w-3.5 text-warning" />}
         </Link>

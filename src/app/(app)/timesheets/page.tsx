@@ -18,6 +18,7 @@ export default async function TimesheetsPage({ searchParams }: { searchParams: P
   const [timesheets, employees, clients, projects, services] = await Promise.all([
     prisma.timesheet.findMany({
       where: { date: { gte: range.start, lte: range.end }, ...(employeeFilter ? { employeeId: employeeFilter } : {}) },
+      relationLoadStrategy: "join",
       include: { employee: true, client: true, project: true, service: true },
       orderBy: { date: "desc" },
     }),

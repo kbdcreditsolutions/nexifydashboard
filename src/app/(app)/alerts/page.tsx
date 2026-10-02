@@ -29,7 +29,7 @@ export default async function AlertsPage() {
         <h2 className="text-lg font-semibold text-foreground">Alerts</h2>
         <p className="text-sm text-muted-foreground">
           {critical} critical &middot; {warning} warning &middot; {info} informational — computed live against your configured thresholds in{" "}
-          <Link href="/settings" className="underline underline-offset-2">Settings</Link>
+          <Link href="/settings" prefetch={false} className="underline underline-offset-2">Settings</Link>
         </p>
       </div>
 
@@ -52,7 +52,7 @@ export default async function AlertsPage() {
             </div>
           );
           return a.href ? (
-            <Link key={i} href={a.href} className="block hover:opacity-80 transition-opacity">
+            <Link key={i} href={a.href} prefetch={false} className="block hover:opacity-80 transition-opacity">
               {content}
             </Link>
           ) : (

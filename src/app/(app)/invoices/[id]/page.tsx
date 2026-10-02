@@ -16,6 +16,7 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
   const { id } = await params;
   const invoice = await prisma.invoice.findUnique({
     where: { id },
+    relationLoadStrategy: "join",
     include: { client: true, items: true, payments: { orderBy: { date: "desc" } }, project: true },
   });
   if (!invoice) notFound();
@@ -27,7 +28,7 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
 
   return (
     <div className="space-y-5 max-w-3xl">
-      <Link href="/invoices" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+      <Link href="/invoices" prefetch={false} className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
         <ArrowLeft className="h-3.5 w-3.5" /> Back to Invoices
       </Link>
 
@@ -38,7 +39,7 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
             <StatusBadge status={effectiveStatus} />
           </div>
           <p className="text-sm text-muted-foreground">
-            <Link href={`/clients/${invoice.clientId}`} className="hover:underline">{invoice.client.name}</Link>
+            <Link href={`/clients/${invoice.clientId}`} prefetch={false} className="hover:underline">{invoice.client.name}</Link>
             {invoice.project && <> &middot; {invoice.project.name}</>}
           </p>
         </div>

@@ -23,7 +23,7 @@ export function InvoicesTable({ rows }: { rows: InvoiceRow[] }) {
     {
       accessorKey: "invoiceNumber",
       header: "Invoice #",
-      cell: ({ row }) => <Link href={`/invoices/${row.original.id}`} className="font-medium hover:underline">{row.original.invoiceNumber}</Link>,
+      cell: ({ row }) => <Link href={`/invoices/${row.original.id}`} prefetch={false} className="font-medium hover:underline">{row.original.invoiceNumber}</Link>,
     },
     { accessorKey: "clientName", header: "Client" },
     { accessorKey: "invoiceDate", header: "Invoice Date", cell: ({ getValue }) => formatDate(getValue() as string) },

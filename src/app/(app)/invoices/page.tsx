@@ -14,7 +14,7 @@ export default async function InvoicesPage() {
   if (!session?.user || !canViewFinancials(session.user.role)) redirect("/dashboard");
 
   const [invoices, clients, settings] = await Promise.all([
-    prisma.invoice.findMany({ include: { client: true, payments: true }, orderBy: { invoiceDate: "desc" } }),
+    prisma.invoice.findMany({ relationLoadStrategy: "join", include: { client: true, payments: true }, orderBy: { invoiceDate: "desc" } }),
     prisma.client.findMany({ where: { deletedAt: null }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     getSettings(),
   ]);

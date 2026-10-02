@@ -5,7 +5,8 @@
 // doesn't support the prepared statements those require).
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["relationJoins"]
 }
 
 datasource db {

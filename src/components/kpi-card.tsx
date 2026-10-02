@@ -46,7 +46,7 @@ export function KpiCard({ label, value, change, changeGoodDirection = "up", icon
 
   if (href) {
     return (
-      <Link href={href} className="block h-full">
+      <Link href={href} prefetch={false} className="block h-full">
         {content}
       </Link>
     );

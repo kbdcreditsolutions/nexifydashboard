@@ -29,7 +29,7 @@ function buildColumns(labelHeader: string): ColumnDef<ProfitRow, unknown>[] {
       header: labelHeader,
       cell: ({ row }) =>
         row.original.href ? (
-          <Link href={row.original.href} className="font-medium hover:underline">{row.original.name}</Link>
+          <Link href={row.original.href} prefetch={false} className="font-medium hover:underline">{row.original.name}</Link>
         ) : (
           <span className="font-medium">{row.original.name}</span>
         ),

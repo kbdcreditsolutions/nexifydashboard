@@ -30,7 +30,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
 
   return (
     <div className="space-y-5">
-      <Link href="/clients" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+      <Link href="/clients" prefetch={false} className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
         <ArrowLeft className="h-3.5 w-3.5" /> Back to Clients
       </Link>
 
@@ -114,12 +114,12 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
         <div className="rounded-lg border border-border bg-card p-4">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold">Projects</h3>
-            <Link href={`/projects?client=${client.id}`} className="text-xs text-muted-foreground hover:underline">View all</Link>
+            <Link href={`/projects?client=${client.id}`} prefetch={false} className="text-xs text-muted-foreground hover:underline">View all</Link>
           </div>
           <div className="space-y-2">
             {projects.length === 0 && <p className="text-sm text-muted-foreground">No projects yet.</p>}
             {projects.map((p) => (
-              <Link key={p.id} href={`/projects/${p.id}`} className="flex items-center justify-between rounded-md px-2.5 py-2 hover:bg-accent/50 text-sm">
+              <Link key={p.id} href={`/projects/${p.id}`} prefetch={false} className="flex items-center justify-between rounded-md px-2.5 py-2 hover:bg-accent/50 text-sm">
                 <span>{p.name}</span>
                 <StatusBadge status={p.status} />
               </Link>

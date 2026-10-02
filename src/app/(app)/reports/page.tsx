@@ -70,7 +70,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
         <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">All Reports</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {OTHER_REPORTS.map((r) => (
-            <Link key={r.title} href={r.href} className="flex items-center justify-between rounded-lg border border-border bg-card p-3.5 hover:border-foreground/20 transition-colors">
+            <Link key={r.title} href={r.href} prefetch={false} className="flex items-center justify-between rounded-lg border border-border bg-card p-3.5 hover:border-foreground/20 transition-colors">
               <div>
                 <p className="text-sm font-medium">{r.title}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">{r.desc}</p>

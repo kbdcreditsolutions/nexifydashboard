@@ -51,7 +51,7 @@ export function TeamAssignment({
         {assigned.length === 0 && <p className="text-sm text-muted-foreground">No team members assigned.</p>}
         {assigned.map((a) => (
           <div key={a.employeeId} className="flex items-center justify-between rounded-md px-2.5 py-1.5 hover:bg-accent/40">
-            <Link href={`/employees/${a.employeeId}`} className="text-sm hover:underline">
+            <Link href={`/employees/${a.employeeId}`} prefetch={false} className="text-sm hover:underline">
               {a.name} <span className="text-muted-foreground text-xs">&middot; {a.role}</span>
             </Link>
             {canManage && (

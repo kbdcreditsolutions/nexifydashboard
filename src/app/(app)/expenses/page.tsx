@@ -28,6 +28,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
   const [expenses, categories, vendors, clients, projects, employees] = await Promise.all([
     prisma.expense.findMany({
       where: { date: { gte: range.start, lte: range.end }, ...(ownEmployeeId ? { employeeId: ownEmployeeId } : {}) },
+      relationLoadStrategy: "join",
       include: { category: true, vendor: true, client: true, project: true },
       orderBy: { date: "desc" },
     }),

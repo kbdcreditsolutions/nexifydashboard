@@ -58,6 +58,7 @@ export function Topbar({ name, email, role, alertCount = 0 }: { name: string; em
                   <Link
                     key={item.href}
                     href={item.href}
+                    prefetch={false}
                     className={cn(
                       "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium",
                       active ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/70"
@@ -75,7 +76,7 @@ export function Topbar({ name, email, role, alertCount = 0 }: { name: string; em
       </div>
 
       <div className="flex items-center gap-1">
-      <Link href="/alerts" className="relative flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent transition-colors">
+      <Link href="/alerts" prefetch={false} className="relative flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent transition-colors">
         <Bell className="h-4 w-4 text-muted-foreground" />
         {alertCount > 0 && (
           <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-negative px-1 text-[10px] font-semibold text-white">
