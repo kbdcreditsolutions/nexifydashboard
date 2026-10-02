@@ -10,5 +10,9 @@ export default auth((req) => {
 });
 
 export const config = {
-  matcher: ["/((?!api/auth|login|_next/static|_next/image|favicon.ico).*)"],
+  // Exclude NextAuth's own routes, the login page, Next's build/image
+  // assets, and anything that looks like a static file (favicon/app icon,
+  // or public/ assets such as /brand/*.png) — otherwise an unauthenticated
+  // request for a plain image gets redirected to /login instead of served.
+  matcher: ["/((?!api/auth|login|_next/static|_next/image|favicon.ico|icon.png|.*\\.(?:png|jpg|jpeg|svg|gif|webp|ico)$).*)"],
 };

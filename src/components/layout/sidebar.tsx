@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 import { NAV_ITEMS } from "@/lib/nav";
 import { canViewFinancials, canManageSettings } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
-import { Building2 } from "lucide-react";
 
 export function Sidebar({ role }: { role: string }) {
   const pathname = usePathname();
@@ -18,10 +17,9 @@ export function Sidebar({ role }: { role: string }) {
 
   return (
     <aside className="hidden lg:flex lg:w-60 lg:flex-col lg:fixed lg:inset-y-0 bg-sidebar text-sidebar-foreground border-r border-sidebar-border">
-      <div className="flex items-center gap-2 px-5 h-16 border-b border-sidebar-border shrink-0">
-        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground">
-          <Building2 className="h-4.5 w-4.5" />
-        </div>
+      <div className="flex items-center gap-2.5 px-5 h-16 border-b border-sidebar-border shrink-0">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/brand/icon-tight.png" alt="" width={32} height={32} className="h-8 w-8 shrink-0" />
         <div className="leading-tight">
           <div className="text-sm font-semibold tracking-tight">Nexify</div>
           <div className="text-[11px] text-sidebar-foreground/60">Operations & Finance</div>

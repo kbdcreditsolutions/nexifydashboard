@@ -59,18 +59,23 @@
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.32 0.09 262);
+  /* Nexify InfoSystems brand blue, sampled from the company logo
+     (nexifyinfosystems.com) — deep blue #2848A0 through bright cyan-blue
+     #10A8E0. Primary/ring/accent below are tuned from that same hue for
+     UI contrast; chart colors are left on the dataviz-validated palette,
+     whose categorical slot 1 is already this same blue family. */
+  --primary: #1d63c4;
   --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
   --muted-foreground: oklch(0.49 0.01 262);
-  --accent: oklch(0.95 0.015 262);
-  --accent-foreground: oklch(0.32 0.09 262);
+  --accent: #eaf3fc;
+  --accent-foreground: #1d63c4;
   --destructive: oklch(0.577 0.245 27.325);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
-  --ring: oklch(0.6 0.08 262);
+  --ring: #5b9eea;
   --positive: #0ca30c;
   --negative: #d03b3b;
   --warning: #fab219;
@@ -81,14 +86,14 @@
   --chart-4: #eda100;
   --chart-5: #e87ba4;
   --radius: 0.5rem;
-  --sidebar: oklch(0.18 0.025 262);
-  --sidebar-foreground: oklch(0.93 0.01 262);
-  --sidebar-primary: oklch(0.55 0.13 262);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.26 0.03 262);
-  --sidebar-accent-foreground: oklch(0.96 0.01 262);
-  --sidebar-border: oklch(0.28 0.03 262);
-  --sidebar-ring: oklch(0.55 0.13 262);
+  --sidebar: #11224a;
+  --sidebar-foreground: #e8f0fd;
+  --sidebar-primary: #14b6e8;
+  --sidebar-primary-foreground: #0b1b3a;
+  --sidebar-accent: #1a3570;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #1e3b7a;
+  --sidebar-ring: #2e86d6;
 }
 
 .dark {
@@ -98,18 +103,18 @@
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
+  --primary: #4c93e6;
+  --primary-foreground: oklch(0.145 0 0);
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
   --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --accent: #15294f;
+  --accent-foreground: #7fb6ef;
   --destructive: oklch(0.704 0.191 22.216);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  --ring: #4c93e6;
   --positive: #0ca30c;
   --negative: #e66767;
   --warning: #fab219;
@@ -119,14 +124,14 @@
   --chart-3: #199e70;
   --chart-4: #c98500;
   --chart-5: #d55181;
-  --sidebar: oklch(0.14 0.02 262);
-  --sidebar-foreground: oklch(0.93 0.01 262);
-  --sidebar-primary: oklch(0.55 0.13 262);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.22 0.025 262);
-  --sidebar-accent-foreground: oklch(0.96 0.01 262);
-  --sidebar-border: oklch(0.25 0.025 262);
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar: #0b1730;
+  --sidebar-foreground: #e8f0fd;
+  --sidebar-primary: #14b6e8;
+  --sidebar-primary-foreground: #0b1b3a;
+  --sidebar-accent: #16295c;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #182c5c;
+  --sidebar-ring: #4c93e6;
 }
 
 @layer base {

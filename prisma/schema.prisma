@@ -1,15 +1,17 @@
 // Nexify Operations & Finance Dashboard — data model
-// Dev datasource: SQLite (file:./dev.db). Swap provider to "postgresql" and
-// set DATABASE_URL to a Postgres connection string for production deploys —
-// no model changes required; all types used here are provider-portable.
+// Postgres (Neon, provisioned via the Vercel marketplace integration).
+// `url` is the pooled connection the app uses at runtime; `directUrl` is
+// the unpooled connection Prisma needs for schema push/migrations (pgbouncer
+// doesn't support the prepared statements those require).
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
 }
 
 // ---------------------------------------------------------------------------

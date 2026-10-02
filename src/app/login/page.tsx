@@ -3,7 +3,7 @@
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
-import { Building2, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -42,12 +42,11 @@ function LoginForm() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-muted/40 px-4">
       <div className="w-full max-w-sm space-y-6">
-        <div className="flex flex-col items-center gap-2 text-center">
-          <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <Building2 className="h-5.5 w-5.5" />
-          </div>
+        <div className="flex flex-col items-center gap-3 text-center">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/brand/logo-full.png" alt="Nexify InfoSystems" className="h-14 w-auto" />
           <div>
-            <h1 className="text-lg font-semibold tracking-tight">Nexify Operations & Finance</h1>
+            <h1 className="text-lg font-semibold tracking-tight">Operations &amp; Finance</h1>
             <p className="text-sm text-muted-foreground">Sign in to your internal dashboard</p>
           </div>
         </div>
