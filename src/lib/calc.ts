@@ -274,6 +274,7 @@ export async function companyPLForRange(range: DateRange): Promise<CompanyPL> {
     prisma.revenue.findMany({ where: { date: { gte: range.start, lte: range.end } } }),
     prisma.expense.findMany({
       where: { date: { gte: range.start, lte: range.end }, approvalStatus: "APPROVED", deletedAt: null },
+      relationLoadStrategy: "join",
       include: { category: true },
     }),
   ]);
@@ -552,6 +553,7 @@ export async function cashFlowForecast(horizons: number[] = [30, 60, 90], asOf =
 export async function expenseBreakdownForRange(range: DateRange): Promise<{ category: string; group: string; amount: number }[]> {
   const expenses = await prisma.expense.findMany({
     where: { date: { gte: range.start, lte: range.end }, approvalStatus: "APPROVED", deletedAt: null },
+    relationLoadStrategy: "join",
     include: { category: true },
   });
   const map = new Map<string, { group: string; amount: number }>();
@@ -587,16 +589,37 @@ export interface DashboardKpis {
   revenuePerEmployee: number;
 }
 
-export async function dashboardKpisForRange(range: DateRange): Promise<DashboardKpis> {
-  const [pl, ar, ap, cash, employeeEcon, activeClients, activeProjects] = await Promise.all([
-    companyPLForRange(range),
+// The point-in-time pieces of the KPI bundle (AR/AP/cash balance/active
+// counts) don't depend on `range` at all — they're "as of now" snapshots.
+// Computing them once and sharing across a current-vs-previous-period
+// comparison (as the dashboard does) avoids running the same ~5 queries
+// twice for an identical result.
+export interface DashboardSnapshot {
+  ar: Awaited<ReturnType<typeof accountsReceivableAging>>;
+  ap: APSummary;
+  cash: number;
+  activeClients: number;
+  activeProjects: number;
+}
+
+export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
+  const [ar, ap, cash, activeClients, activeProjects] = await Promise.all([
     accountsReceivableAging(),
     accountsPayableSummary(),
     actualCashBalance(),
-    employeeEconomicsForRange(range),
     prisma.client.count({ where: { status: "ACTIVE", deletedAt: null } }),
     prisma.project.count({ where: { status: "ACTIVE", deletedAt: null } }),
   ]);
+  return { ar, ap, cash, activeClients, activeProjects };
+}
+
+export async function dashboardKpisForRange(range: DateRange, snapshot?: DashboardSnapshot): Promise<DashboardKpis> {
+  const [pl, resolvedSnapshot, employeeEcon] = await Promise.all([
+    companyPLForRange(range),
+    snapshot ? Promise.resolve(snapshot) : getDashboardSnapshot(),
+    employeeEconomicsForRange(range),
+  ]);
+  const { ar, ap, cash, activeClients, activeProjects } = resolvedSnapshot;
 
   const activeEmployees = employeeEcon.filter((e) => e.availableHours > 0).length || employeeEcon.length;
   const billableHours = employeeEcon.reduce((s, e) => s + e.billableHours, 0);

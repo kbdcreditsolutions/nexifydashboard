@@ -68,4 +68,9 @@ export const { handlers, signIn, signOut, auth: authEdge } = NextAuth({
 // times per single navigation. React's cache() dedupes repeat zero-arg
 // calls within one request. Only valid in the Node/RSC runtime, so
 // middleware.ts (edge runtime) imports `authEdge` above instead.
+//
+// The returned Session object is shared by reference across every caller
+// in the request — fine today since nothing mutates it (role changes go
+// through Prisma, not this object), but don't start writing to
+// `session.user.*` in a page/action without copying it first.
 export const auth = cache(authEdge);

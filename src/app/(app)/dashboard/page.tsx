@@ -24,10 +24,10 @@ import { CashFlowChart } from "@/components/charts/cash-flow-chart";
 import { UtilizationChart } from "@/components/charts/utilization-chart";
 import {
   dashboardKpisForRange,
+  getDashboardSnapshot,
   companyPLForRange,
   clientFinancialsForRange,
   expenseBreakdownForRange,
-  accountsReceivableAging,
   cashFlowForRange,
   cashFlowForecast,
   employeeEconomicsForRange,
@@ -49,18 +49,25 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const session = await auth();
   const showFinancials = canViewFinancials(session?.user.role ?? "");
 
-  const [kpis, prevKpis, revenuesByClient, expenseBreakdown, ar, cashRange, cashForecast, utilEcon, serviceRevenue, alerts] = await Promise.all([
-    dashboardKpisForRange(range),
-    dashboardKpisForRange(prevRange),
+  // AR/AP/cash-balance/active-counts are point-in-time, not range-scoped —
+  // fetch that snapshot once and share it across the current- and
+  // previous-period KPI calls (and the AR aging chart below) instead of
+  // recomputing the same ~5 queries three times on the one page every
+  // user sees first.
+  const snapshot = await getDashboardSnapshot();
+
+  const [kpis, prevKpis, revenuesByClient, expenseBreakdown, cashRange, cashForecast, utilEcon, serviceRevenue, alerts] = await Promise.all([
+    dashboardKpisForRange(range, snapshot),
+    dashboardKpisForRange(prevRange, snapshot),
     clientFinancialsForRange(range),
     expenseBreakdownForRange(range),
-    accountsReceivableAging(),
     cashFlowForRange(range),
     cashFlowForecast([30, 60, 90]),
     employeeEconomicsForRange(range),
     prisma.revenue.groupBy({ by: ["serviceId"], where: { date: { gte: range.start, lte: range.end } }, _sum: { amount: true } }),
     showFinancials ? computeAlerts() : Promise.resolve([]),
   ]);
+  const ar = snapshot.ar;
   const topAlerts = alerts.filter((a) => a.severity !== "INFO").slice(0, 5);
 
   const months = lastNMonths(6);

@@ -38,17 +38,21 @@ export const computeAlerts = cache(async (): Promise<AppAlert[]> => {
     projectFinancialsForRange({ start: new Date(now.getFullYear() - 50, 0, 1), end: new Date(now.getFullYear() + 50, 0, 1), label: "All Time" }),
     employeeEconomicsForRange({ start: addDays(now, -30), end: now, label: "Trailing 30 Days" }),
     Promise.all([
-      prisma.expense.findMany({ where: { date: { gte: currentMonthRange().start, lte: currentMonthRange().end }, approvalStatus: "APPROVED", deletedAt: null }, include: { category: true } }),
-      prisma.expense.findMany({ where: { date: { gte: previousMonthRange().start, lte: previousMonthRange().end }, approvalStatus: "APPROVED", deletedAt: null }, include: { category: true } }),
+      prisma.expense.findMany({ where: { date: { gte: currentMonthRange().start, lte: currentMonthRange().end }, approvalStatus: "APPROVED", deletedAt: null }, relationLoadStrategy: "join", include: { category: true } }),
+      prisma.expense.findMany({ where: { date: { gte: previousMonthRange().start, lte: previousMonthRange().end }, approvalStatus: "APPROVED", deletedAt: null }, relationLoadStrategy: "join", include: { category: true } }),
     ]),
     prisma.recurringExpense.findMany({ where: { active: true, nextOccurrence: { lte: addDays(now, 7), gte: now } } }),
-    prisma.accountsPayable.findMany({ where: { status: { in: ["OPEN", "PARTIALLY_PAID", "OVERDUE"] }, dueDate: { lte: addDays(now, 7) } }, include: { vendor: true } }),
+    prisma.accountsPayable.findMany({ where: { status: { in: ["OPEN", "PARTIALLY_PAID", "OVERDUE"] }, dueDate: { lte: addDays(now, 7) } }, relationLoadStrategy: "join", include: { vendor: true } }),
     actualCashBalance(),
-    // Upper-bounded to a generous 90 days so this can run alongside
-    // everything else above without waiting on `settings` first; the exact
-    // configured threshold is applied as a plain filter below once
-    // `settings` has resolved.
-    prisma.client.findMany({ where: { status: "ACTIVE", contractEndDate: { not: null, lte: addDays(now, 90) } } }),
+    // Chains off getSettings() rather than hardcoding a window — that
+    // costs nothing extra since getSettings() is module-cached (the first
+    // call above resolves it for the whole process), and a hardcoded cap
+    // here would silently drop CONTRACT_EXPIRING alerts for any
+    // contractExpiringDays value configured above that cap.
+    (async () => {
+      const s = await getSettings();
+      return prisma.client.findMany({ where: { status: "ACTIVE", contractEndDate: { not: null, lte: addDays(now, Number(s.contractExpiringDays)) } } });
+    })(),
   ]);
 
   // Invoice overdue + large receivable
@@ -119,10 +123,10 @@ export const computeAlerts = cache(async (): Promise<AppAlert[]> => {
     alerts.push({ type: "CASH_BELOW_THRESHOLD", severity: "CRITICAL", message: `Cash balance $${cash.toFixed(2)} is below the minimum threshold of $${cashMin.toFixed(2)}`, href: "/cash-flow" });
   }
 
-  // Contract nearing expiration
-  const contractDeadline = addDays(now, Number(settings.contractExpiringDays));
+  // Contract nearing expiration — expiringClients is already filtered to
+  // the configured threshold by the query above.
   for (const c of expiringClients) {
-    if (!c.contractEndDate || c.contractEndDate > contractDeadline) continue;
+    if (!c.contractEndDate) continue;
     alerts.push({ type: "CONTRACT_EXPIRING", severity: "WARNING", message: `${c.name}'s contract ends ${c.contractEndDate.toLocaleDateString()}`, href: `/clients/${c.id}` });
   }
 
