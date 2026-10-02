@@ -4,6 +4,14 @@
 // traces back to a source record.
 import { PrismaClient, EmploymentType, ProjectStatus, BillingModel, InvoiceStatus } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { randomUUID } from "node:crypto";
+
+async function createManyChunked<T>(label: string, rows: T[], fn: (chunk: T[]) => Promise<unknown>, chunkSize = 500) {
+  for (let i = 0; i < rows.length; i += chunkSize) {
+    await fn(rows.slice(i, i + chunkSize));
+  }
+  if (rows.length > 0) console.log(`  (${label}: ${rows.length} rows in ${Math.ceil(rows.length / chunkSize)} batch(es))`);
+}
 
 const prisma = new PrismaClient();
 
@@ -369,11 +377,14 @@ async function main() {
 
   // ===========================================================================
   // TIMESHEETS + REVENUE (the core of the connected model)
+  // Buffered and flushed via createMany — individually awaiting ~2800
+  // sequential creates over a WAN connection to Postgres (Neon) is the
+  // single biggest cost in this script (hundreds of ms of round-trip
+  // latency each, serially); batching cuts it to a handful of requests.
   // ===========================================================================
   console.log("Generating timesheets and revenue...");
 
   const activeProjSeeds = projSeeds.filter((p) => ["ACTIVE", "COMPLETED", "ON_HOLD"].includes(p.status));
-  let timesheetCount = 0;
   let revenueCount = 0;
   const invoiceableRevenueByClientMonth = new Map<string, { clientId: string; month: string; items: { projectName: string; serviceName: string; amount: number }[] }>();
 
@@ -382,6 +393,22 @@ async function main() {
     const entry = invoiceableRevenueByClientMonth.get(key) ?? { clientId, month, items: [] };
     entry.items.push({ projectName, serviceName, amount });
     invoiceableRevenueByClientMonth.set(key, entry);
+  }
+
+  type TimesheetRow = {
+    id: string; date: Date; employeeId: string; clientId: string | null; projectId: string | null; serviceId: string | null;
+    hours: number; billable: boolean; description: string; status: "APPROVED"; approvedById: string; approvedAt: Date;
+  };
+  type RevenueRow = {
+    id: string; revenueCode: string; clientId: string; projectId: string | null; employeeId: string | null; serviceId: string | null;
+    timesheetId: string | null; revenueType: "HOURLY" | "RETAINER" | "MILESTONE" | "FIXED_PROJECT"; date: Date; amount: number; paymentStatus: "UNPAID";
+  };
+  const timesheetBuffer: TimesheetRow[] = [];
+  const revenueBuffer: RevenueRow[] = [];
+
+  function nextRevCode(): string {
+    revenueCount++;
+    return `REV-${String(revenueCount).padStart(5, "0")}`;
   }
 
   for (const p of activeProjSeeds) {
@@ -405,79 +432,73 @@ async function main() {
           const billableHours = round2(4 + rand() * 4.5); // 4-8.5 hrs billable
           const nonBillableHours = rand() > 0.75 ? round2(rand() * 1.5) : 0;
 
-          const billTs = await prisma.timesheet.create({
-            data: {
+          const billTsId = randomUUID();
+          timesheetBuffer.push({
+            id: billTsId,
+            date: day,
+            employeeId: employeeRecord.id,
+            clientId: client(p.clientName).id,
+            projectId: project(p.code).id,
+            serviceId: svc(p.serviceName).id,
+            hours: billableHours,
+            billable: true,
+            description: `${p.serviceName} work on ${p.name}`,
+            status: "APPROVED",
+            approvedById: ownerUser.id,
+            approvedAt: day,
+          });
+
+          const amount = round2(billableHours * e.billingRate);
+          revenueBuffer.push({
+            id: randomUUID(),
+            revenueCode: nextRevCode(),
+            clientId: client(p.clientName).id,
+            projectId: project(p.code).id,
+            employeeId: employeeRecord.id,
+            serviceId: svc(p.serviceName).id,
+            timesheetId: billTsId,
+            revenueType: "HOURLY",
+            date: day,
+            amount,
+            paymentStatus: "UNPAID",
+          });
+          const monthKey = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}`;
+          addInvoiceable(client(p.clientName).id, monthKey, p.name, p.serviceName, amount);
+
+          if (nonBillableHours > 0) {
+            timesheetBuffer.push({
+              id: randomUUID(),
               date: day,
               employeeId: employeeRecord.id,
               clientId: client(p.clientName).id,
               projectId: project(p.code).id,
               serviceId: svc(p.serviceName).id,
-              hours: billableHours,
-              billable: true,
-              description: `${p.serviceName} work on ${p.name}`,
+              hours: nonBillableHours,
+              billable: false,
+              description: "Internal sync / admin",
               status: "APPROVED",
               approvedById: ownerUser.id,
               approvedAt: day,
-            },
-          });
-          timesheetCount++;
-
-          const amount = round2(billableHours * e.billingRate);
-          const rev = await prisma.revenue.create({
-            data: {
-              revenueCode: `REV-${String(revenueCount + 1).padStart(5, "0")}`,
-              clientId: client(p.clientName).id,
-              projectId: project(p.code).id,
-              employeeId: employeeRecord.id,
-              serviceId: svc(p.serviceName).id,
-              timesheetId: billTs.id,
-              revenueType: "HOURLY",
-              date: day,
-              amount,
-              paymentStatus: "UNPAID",
-            },
-          });
-          revenueCount++;
-          const monthKey = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}`;
-          addInvoiceable(client(p.clientName).id, monthKey, p.name, p.serviceName, amount);
-          void rev;
-
-          if (nonBillableHours > 0) {
-            await prisma.timesheet.create({
-              data: {
-                date: day,
-                employeeId: employeeRecord.id,
-                clientId: client(p.clientName).id,
-                projectId: project(p.code).id,
-                serviceId: svc(p.serviceName).id,
-                hours: nonBillableHours,
-                billable: false,
-                description: "Internal sync / admin",
-                status: "APPROVED",
-                approvedById: ownerUser.id,
-                approvedAt: day,
-              },
             });
-            timesheetCount++;
           }
         }
       }
     } else if (p.model === "RETAINER") {
       for (const { start: mStart } of monthsInRange(pStart, pEnd)) {
         const amount = p.contractValue;
-        await prisma.revenue.create({
-          data: {
-            revenueCode: `REV-${String(revenueCount + 1).padStart(5, "0")}`,
-            clientId: client(p.clientName).id,
-            projectId: project(p.code).id,
-            serviceId: svc(p.serviceName).id,
-            revenueType: "RETAINER",
-            date: new Date(mStart.getFullYear(), mStart.getMonth(), 1),
-            amount,
-            paymentStatus: "UNPAID",
-          },
+        revenueBuffer.push({
+          id: randomUUID(),
+          revenueCode: nextRevCode(),
+          clientId: client(p.clientName).id,
+          projectId: project(p.code).id,
+          employeeId: null,
+          serviceId: svc(p.serviceName).id,
+          timesheetId: null,
+          revenueType: "RETAINER",
+          date: new Date(mStart.getFullYear(), mStart.getMonth(), 1),
+          amount,
+          paymentStatus: "UNPAID",
         });
-        revenueCount++;
         const monthKey = `${mStart.getFullYear()}-${String(mStart.getMonth() + 1).padStart(2, "0")}`;
         addInvoiceable(client(p.clientName).id, monthKey, p.name, p.serviceName, amount);
 
@@ -488,22 +509,20 @@ async function main() {
           for (const day of days) {
             if (rand() > 0.35) continue;
             const hours = round2(1 + rand() * 3);
-            await prisma.timesheet.create({
-              data: {
-                date: day,
-                employeeId: employeeRecord.id,
-                clientId: client(p.clientName).id,
-                projectId: project(p.code).id,
-                serviceId: svc(p.serviceName).id,
-                hours,
-                billable: true,
-                description: `Retainer coverage: ${p.name}`,
-                status: "APPROVED",
-                approvedById: ownerUser.id,
-                approvedAt: day,
-              },
+            timesheetBuffer.push({
+              id: randomUUID(),
+              date: day,
+              employeeId: employeeRecord.id,
+              clientId: client(p.clientName).id,
+              projectId: project(p.code).id,
+              serviceId: svc(p.serviceName).id,
+              hours,
+              billable: true,
+              description: `Retainer coverage: ${p.name}`,
+              status: "APPROVED",
+              approvedById: ownerUser.id,
+              approvedAt: day,
             });
-            timesheetCount++;
           }
         }
       }
@@ -516,53 +535,52 @@ async function main() {
         const mDate = new Date(pStart.getTime() + offset * 86400000);
         if (mDate > pEnd) continue;
         const amount = round2(p.contractValue * milestones[i]);
-        await prisma.revenue.create({
-          data: {
-            revenueCode: `REV-${String(revenueCount + 1).padStart(5, "0")}`,
-            clientId: client(p.clientName).id,
-            projectId: project(p.code).id,
-            serviceId: svc(p.serviceName).id,
-            revenueType: p.model === "MILESTONE" ? "MILESTONE" : "FIXED_PROJECT",
-            date: mDate,
-            amount,
-            paymentStatus: "UNPAID",
-          },
+        revenueBuffer.push({
+          id: randomUUID(),
+          revenueCode: nextRevCode(),
+          clientId: client(p.clientName).id,
+          projectId: project(p.code).id,
+          employeeId: null,
+          serviceId: svc(p.serviceName).id,
+          timesheetId: null,
+          revenueType: p.model === "MILESTONE" ? "MILESTONE" : "FIXED_PROJECT",
+          date: mDate,
+          amount,
+          paymentStatus: "UNPAID",
         });
-        revenueCount++;
         const monthKey = `${mDate.getFullYear()}-${String(mDate.getMonth() + 1).padStart(2, "0")}`;
         addInvoiceable(client(p.clientName).id, monthKey, p.name, p.serviceName, amount);
       }
 
       // delivery team hours logged against the fixed-price budget (cost only, no separate revenue)
       for (const memberName of p.team) {
-        const e = empSeeds.find((x) => x.name === memberName)!;
         const employeeRecord = emp(memberName);
         const days = eachWeekday(pStart, pEnd);
         for (const day of days) {
           if (rand() > 0.7) continue;
           const hours = round2(3.5 + rand() * 4.5);
-          await prisma.timesheet.create({
-            data: {
-              date: day,
-              employeeId: employeeRecord.id,
-              clientId: client(p.clientName).id,
-              projectId: project(p.code).id,
-              serviceId: svc(p.serviceName).id,
-              hours,
-              billable: true,
-              description: `Delivery work on ${p.name}`,
-              status: "APPROVED",
-              approvedById: ownerUser.id,
-              approvedAt: day,
-            },
+          timesheetBuffer.push({
+            id: randomUUID(),
+            date: day,
+            employeeId: employeeRecord.id,
+            clientId: client(p.clientName).id,
+            projectId: project(p.code).id,
+            serviceId: svc(p.serviceName).id,
+            hours,
+            billable: true,
+            description: `Delivery work on ${p.name}`,
+            status: "APPROVED",
+            approvedById: ownerUser.id,
+            approvedAt: day,
           });
-          timesheetCount++;
-          void e;
         }
       }
     }
   }
-  console.log(`  ${timesheetCount} timesheet entries, ${revenueCount} revenue records`);
+
+  await createManyChunked("timesheets", timesheetBuffer, (chunk) => prisma.timesheet.createMany({ data: chunk }));
+  await createManyChunked("revenue", revenueBuffer, (chunk) => prisma.revenue.createMany({ data: chunk }));
+  console.log(`  ${timesheetBuffer.length} timesheet entries, ${revenueBuffer.length} revenue records`);
 
   // ===========================================================================
   // INVOICES + PAYMENTS (built from the invoiceable revenue grouped above)
