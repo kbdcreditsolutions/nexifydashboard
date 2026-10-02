@@ -53,12 +53,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   // fetch that snapshot once and share it across the current- and
   // previous-period KPI calls (and the AR aging chart below) instead of
   // recomputing the same ~5 queries three times on the one page every
-  // user sees first.
-  const snapshot = await getDashboardSnapshot();
+  // user sees first. Held unawaited so it runs as one of the parallel
+  // branches below rather than serializing in front of them.
+  const snapshotPromise = getDashboardSnapshot();
 
-  const [kpis, prevKpis, revenuesByClient, expenseBreakdown, cashRange, cashForecast, utilEcon, serviceRevenue, alerts] = await Promise.all([
-    dashboardKpisForRange(range, snapshot),
-    dashboardKpisForRange(prevRange, snapshot),
+  const [kpis, prevKpis, revenuesByClient, expenseBreakdown, cashRange, cashForecast, utilEcon, serviceRevenue, alerts, snapshot] = await Promise.all([
+    dashboardKpisForRange(range, snapshotPromise),
+    dashboardKpisForRange(prevRange, snapshotPromise),
     clientFinancialsForRange(range),
     expenseBreakdownForRange(range),
     cashFlowForRange(range),
@@ -66,8 +67,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     employeeEconomicsForRange(range),
     prisma.revenue.groupBy({ by: ["serviceId"], where: { date: { gte: range.start, lte: range.end } }, _sum: { amount: true } }),
     showFinancials ? computeAlerts() : Promise.resolve([]),
+    snapshotPromise,
   ]);
-  const ar = snapshot.ar;
+  const { ar } = snapshot;
   const topAlerts = alerts.filter((a) => a.severity !== "INFO").slice(0, 5);
 
   const months = lastNMonths(6);

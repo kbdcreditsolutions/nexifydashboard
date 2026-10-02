@@ -3,7 +3,7 @@
 // are always consistent with the underlying data.
 import { cache } from "react";
 import { prisma } from "@/lib/prisma";
-import { getSettings } from "@/lib/settings";
+import { getSettings, DEFAULT_SETTINGS, MAX_CONTRACT_EXPIRING_DAYS } from "@/lib/settings";
 import { num } from "@/lib/format";
 import { currentMonthRange, previousMonthRange, addDays } from "@/lib/dates";
 import { projectFinancialsForRange, employeeEconomicsForRange, actualCashBalance } from "@/lib/calc";
@@ -28,8 +28,14 @@ export const computeAlerts = cache(async (): Promise<AppAlert[]> => {
   const now = new Date();
   const alerts: AppAlert[] = [];
 
+  // Held as its own reference so the contract-expiry query below chains
+  // off the exact same promise rather than issuing a second getSettings()
+  // call (settings.ts now dedupes concurrent calls anyway, but this keeps
+  // the dependency explicit).
+  const settingsPromise = getSettings();
+
   const [settings, invoices, projectFin, econ, [curExpenses, prevExpenses], upcomingRecurring, upcomingPayables, cash, expiringClients] = await Promise.all([
-    getSettings(),
+    settingsPromise,
     prisma.invoice.findMany({
       where: { status: { in: ["SENT", "PARTIALLY_PAID", "OVERDUE"] } },
       relationLoadStrategy: "join",
@@ -44,15 +50,20 @@ export const computeAlerts = cache(async (): Promise<AppAlert[]> => {
     prisma.recurringExpense.findMany({ where: { active: true, nextOccurrence: { lte: addDays(now, 7), gte: now } } }),
     prisma.accountsPayable.findMany({ where: { status: { in: ["OPEN", "PARTIALLY_PAID", "OVERDUE"] }, dueDate: { lte: addDays(now, 7) } }, relationLoadStrategy: "join", include: { vendor: true } }),
     actualCashBalance(),
-    // Chains off getSettings() rather than hardcoding a window — that
-    // costs nothing extra since getSettings() is module-cached (the first
-    // call above resolves it for the whole process), and a hardcoded cap
-    // here would silently drop CONTRACT_EXPIRING alerts for any
-    // contractExpiringDays value configured above that cap.
-    (async () => {
-      const s = await getSettings();
-      return prisma.client.findMany({ where: { status: "ACTIVE", contractEndDate: { not: null, lte: addDays(now, Number(s.contractExpiringDays)) } } });
-    })(),
+    // Chains off settingsPromise rather than hardcoding a window — a
+    // hardcoded cap here would silently drop CONTRACT_EXPIRING alerts for
+    // any contractExpiringDays value configured above that cap. The value
+    // is free-form user input (no server-side bound), so it's clamped to a
+    // sane range before reaching a Prisma Date argument — an unclamped
+    // non-finite or absurd number (e.g. "1e999") would otherwise throw a
+    // PrismaClientValidationError on an Invalid Date and 500 every page
+    // under (app), including /settings itself, with no way to fix it from
+    // the UI.
+    settingsPromise.then((s) => {
+      const raw = Number(s.contractExpiringDays);
+      const days = Number.isFinite(raw) ? Math.min(Math.max(Math.trunc(raw), 0), MAX_CONTRACT_EXPIRING_DAYS) : Number(DEFAULT_SETTINGS.contractExpiringDays);
+      return prisma.client.findMany({ where: { status: "ACTIVE", contractEndDate: { not: null, gte: now, lte: addDays(now, days) } } });
+    }),
   ]);
 
   // Invoice overdue + large receivable

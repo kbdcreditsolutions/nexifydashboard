@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
 import { canManageSettings } from "@/lib/rbac";
-import { setSetting, type SettingsMap } from "@/lib/settings";
+import { setSetting, type SettingsMap, MAX_CONTRACT_EXPIRING_DAYS } from "@/lib/settings";
 import bcrypt from "bcryptjs";
 
 async function requireSettingsAccess() {
@@ -23,29 +23,64 @@ async function requireOwner() {
   return session;
 }
 
-const settingsKeys = [
-  "companyName",
-  "currency",
-  "fiscalYearStart",
-  "defaultPaymentTerms",
-  "marginThresholdPct",
-  "utilizationThresholdPct",
-  "cashMinThreshold",
-  "largeReceivableThreshold",
-  "expenseSpikeThresholdPct",
-  "contractExpiringDays",
-  "defaultBillingRate",
-  "defaultTaxRatePct",
-] as const;
+const textKeys = ["companyName", "currency", "fiscalYearStart", "defaultPaymentTerms"] as const;
+
+// Every numeric setting is user-editable free text (a plain <input type="number">
+// on the client, which is only a UI hint — nothing stops a raw request from
+// sending anything). Several of these values feed directly into Prisma Date
+// arithmetic (contractExpiringDays), threshold comparisons (marginThresholdPct,
+// utilizationThresholdPct), or invoice tax math (defaultTaxRatePct), so each
+// gets a bound matched to what it actually means — not one shared ceiling —
+// this action is the actual trust boundary, not the form.
+const pctSchema = z.coerce.number().finite().min(0).max(100);
+// Expense spikes are legitimately >100% (e.g. a category tripling month over
+// month), so this one just needs a sane upper bound, not a percent cap.
+const spikePctSchema = z.coerce.number().finite().min(0).max(100_000);
+const dollarSchema = z.coerce.number().finite().min(0).max(100_000_000);
+const contractDaysSchema = z.coerce.number().finite().int().min(0).max(MAX_CONTRACT_EXPIRING_DAYS);
+
+const numericSchemas = {
+  marginThresholdPct: pctSchema,
+  utilizationThresholdPct: pctSchema,
+  defaultTaxRatePct: pctSchema,
+  expenseSpikeThresholdPct: spikePctSchema,
+  cashMinThreshold: dollarSchema,
+  largeReceivableThreshold: dollarSchema,
+  defaultBillingRate: dollarSchema,
+  contractExpiringDays: contractDaysSchema,
+} as const satisfies Record<string, z.ZodType<number>>;
+
+const numericKeys = Object.keys(numericSchemas) as (keyof typeof numericSchemas)[];
 
 export async function updateSettings(formData: FormData) {
   await requireSettingsAccess();
-  for (const key of settingsKeys) {
+
+  // Validate every field before writing any of them — otherwise a bad value
+  // on e.g. defaultTaxRatePct (last in the form) would leave every field
+  // before it already committed to the DB, while the single error toast on
+  // the client implies nothing saved.
+  const textWrites: [keyof SettingsMap, string][] = [];
+  for (const key of textKeys) {
     const value = formData.get(key);
-    if (typeof value === "string" && value.length > 0) {
-      await setSetting(key as keyof SettingsMap, value);
+    if (typeof value === "string" && value.trim().length > 0) {
+      textWrites.push([key, value.trim()]);
     }
   }
+
+  const numericWrites: [keyof SettingsMap, string][] = [];
+  for (const key of numericKeys) {
+    const value = formData.get(key);
+    if (typeof value === "string" && value.trim().length > 0) {
+      const parsed = numericSchemas[key].safeParse(value.trim());
+      if (!parsed.success) throw new Error(`${key} must be a valid number.`);
+      numericWrites.push([key, String(parsed.data)]);
+    }
+  }
+
+  for (const [key, value] of [...textWrites, ...numericWrites]) {
+    await setSetting(key, value);
+  }
+
   revalidatePath("/settings");
 }
 

@@ -613,7 +613,7 @@ export async function getDashboardSnapshot(): Promise<DashboardSnapshot> {
   return { ar, ap, cash, activeClients, activeProjects };
 }
 
-export async function dashboardKpisForRange(range: DateRange, snapshot?: DashboardSnapshot): Promise<DashboardKpis> {
+export async function dashboardKpisForRange(range: DateRange, snapshot?: DashboardSnapshot | Promise<DashboardSnapshot>): Promise<DashboardKpis> {
   const [pl, resolvedSnapshot, employeeEcon] = await Promise.all([
     companyPLForRange(range),
     snapshot ? Promise.resolve(snapshot) : getDashboardSnapshot(),
